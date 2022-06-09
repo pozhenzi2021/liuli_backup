@@ -1,0 +1,2222 @@
+<!DOCTYPE html>
+<html class="
+">
+  <head>
+            <meta name="wechat-enable-text-zoom-em" content="true">
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+<meta http-equiv="X-UA-Compatible" content="IE=edge">
+<meta name="color-scheme" content="light dark">
+<meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=0,viewport-fit=cover">
+<link rel="shortcut icon" type="image/x-icon" href="//res.wx.qq.com/a/wx_fed/assets/res/NTI4MWU5.ico" reportloaderror>
+<link rel="mask-icon" href="//res.wx.qq.com/a/wx_fed/assets/res/MjliNWVm.svg" color="#4C4C4C" reportloaderror>
+<link rel="apple-touch-icon-precomposed" href="//res.wx.qq.com/a/wx_fed/assets/res/OTE0YTAw.png" reportloaderror>
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black">
+<meta name="format-detection" content="telephone=no">
+<script  nonce="1102006763" reportloaderror>try{document.getElementsByTagName('html').item(0).style.webkitTextSizeAdjust=JSON.parse(window.__wxWebEnv.getEnv()).fontScale+'%'}catch(e){}</script>
+<script type="text/javascript" nonce="1102006763" reportloaderror>
+  window.logs = { pagetime: {} };
+  window.logs.pagetime['html_begin'] = (+new Date());
+  window.LANG = "zh_CN"; // 页面语言 zh_CN en_US
+</script>
+
+    <script type="text/javascript" nonce="1102006763" reportloaderror>
+/**
+ * 于2022-02-21重构vite
+ * 仅保留原有moon.js中上报相关的部分
+ * @author baakqiu
+ * @date 2022-02-21
+ */
+
+var WX_BJ_REPORT = window.WX_BJ_REPORT || {};
+(function(_) {
+  if (_.BadJs) {
+    return;
+  }
+  //onerror上报名 
+  var BADJS_WIN_ERR = 'BadjsWindowError';
+  var extend = function(source, destination) {
+    for (var property in destination) {
+      source[property] = destination[property]
+    }
+    return source
+  }
+  /*
+    出错上报字段:mid name key  msg  stack file col line uin
+    mid 模块名
+    name 监控名
+    key 特征值
+    msg 额外信息
+  */
+  _.BadJs = {
+    uin: 0,
+    mid: "",
+    view: "wap",
+    _cache: {}, //上报_cache 同一mid name key 只会上报一次
+    _info: {}, // 打点记录 会写入msg帮助定位
+    _hookCallback: null,
+    ignorePath: true,
+    throw: function(e, extData) {
+      this.onError(e, extData);
+      throw e;
+    },
+    //接收异常并上报处理 如果有额外信息可以放在第二个参数_data中
+    // _data 只能覆盖上报协议的字段mid （name,key 不建议通过data覆盖） msg  stack file col line uin
+    onError: function(e, extData) {
+      try {
+        //标记已执行的throw
+        if (e.BADJS_EXCUTED == true) {
+          return;
+        }
+        e.BADJS_EXCUTED = true;
+        var data = errToData(e);
+        data.uin = this.uin;
+        data.mid = this.mid;
+        data.view = this.view;
+        data.cmdb_module = 'mmbizwap';
+        //data.msg = msg || data.msg;
+        if (!!extData) {
+          data = extend(data, extData);
+        }
+        //如果cid存在 将cid合并到key
+        if (data.cid) {
+          data.key = "[" + data.cid + "]:" + data.key;
+        }
+        
+        if (data._info) {
+          if (Object.prototype.toString.call(data._info) == "[object Object]") {
+            data.msg += " || info:" + JSON.stringify(data._info);
+          } else if (Object.prototype.toString.call(data._info) == "[object String]") {
+            data.msg += " || info:" + data._info;
+          } else {
+            data.msg += " || info:" + data._info;
+          }
+        }
+        if (typeof this._hookCallback == "function") {
+          if (this._hookCallback(data) === false) {
+            return
+          }
+        }
+        this._send(data);
+        return _.BadJs;
+      } catch (e) {
+        console.error(e);
+      }
+    },
+    winErr: function(event) {
+      if (event.error && event.error.BADJS_EXCUTED) {
+        return;
+      }
+      if (event.type === 'unhandledrejection') {
+        _.BadJs.onError(createError(event.type, event.reason, "", "", "", event.reason));
+      }else{
+        _.BadJs.onError(createError(BADJS_WIN_ERR, event.message, event.filename, event.lineno, event.colno, event.error));
+      }
+    },
+    init: function(uin, mid, view) {
+      this.uin = uin || this.uin;
+      this.mid = mid || this.mid;
+      this.view = view || this.view;
+      return _.BadJs;
+    },
+    //钩子函数
+    hook: function(fn) {
+      this._hookCallback = fn;
+      return _.BadJs;
+    },
+    _send: function(data) {
+      //hack uin mid
+      if (!data.mid) {
+        if (typeof window.PAGE_MID !== 'undefined' && window.PAGE_MID) {
+          data.mid = window.PAGE_MID;
+        } else {
+          return;
+        }
+      }
+      if (!data.uin) {
+        data.uin = window.user_uin || 0;
+      }
+      // 发送要去重 
+      var flag = [data.mid, data.name, data.key].join("|");
+      if (this._cache && this._cache[flag]) {
+        return
+      } else {
+        this._cache && (this._cache[flag] = true);
+        this._xhr(data);
+      }
+      return _.BadJs;
+    },
+    _xhr: function(data) {
+      //console.log(data);
+      var xmlobj;
+      if (window.ActiveXObject) {
+        try {
+          xmlobj = new ActiveXObject("Msxml2.XMLHTTP");
+        } catch (e) {
+          try {
+            xmlobj = new ActiveXObject("Microsoft.XMLHTTP");
+          } catch (E) {
+            xmlobj = false;
+          }
+        }
+      } else if (window.XMLHttpRequest) {
+        xmlobj = new XMLHttpRequest();
+      }
+      var param = "";
+      for (var key in data) {
+        if (key && data[key]) {
+          param += [key, "=", encodeURIComponent(data[key]), "&"].join("");
+        }
+      }
+      if (xmlobj && typeof xmlobj.open == "function") {
+        xmlobj.open("POST", "https://badjs.weixinbridge.com/report", true);
+        xmlobj.setRequestHeader("Content-Type", "application/x-www-form-urlencoded; charset=UTF-8");
+        xmlobj.onreadystatechange = function(status) {};
+        xmlobj.send(param.slice(0, -1));
+      } else {
+        var img = new Image();
+        img.src = "https://badjs.weixinbridge.com/report?" + param;
+      }
+    },
+    // key是特征值 默认上报msg就是key，也可以主动传msg包含更多上报信息 
+    report: function(name, key, data) {
+      this.onError(createError(name, key), data);
+      return this;
+    },
+    // 打点标记
+    mark: function(info) {
+      this._info = extend(this._info, info);
+    },
+    nocache: function() {
+      this._cache = false;
+      return _.BadJs;
+    }
+  }
+  function createError(name, msg, url, line, col, error) {
+    return {
+      name: name || "",
+      message: msg || "",
+      file: url || "",
+      line: line || "",
+      col: col || "",
+      stack: (error && error.stack) || "",
+    }
+  }
+  //将异常错误转换成上报协议支持的字段
+  /*
+  * 先取e对象上的file line col等字段
+  * 再解析e.statck
+  * name 错误大类 默认取badjs_try_err|badjs_win_err
+  * key  错误标识 e.message
+  * msg  错误信息 e.message
+  * stack 错误堆栈 e.stack
+  * file 错误发生的文件
+  * line 行
+  * col 列
+  * client_version
+  */
+  function errToData(e) {
+    var _stack = parseStack(e);
+    return {
+      name: e.name,
+      key: e.message,
+      msg: e.message,
+      stack: _stack.info,
+      file: _stack.file,
+      line: _stack.line,
+      col: _stack.col,
+      client_version: "",
+      _info: e._info
+    }
+  }
+  function parseStack(e) {
+    e._info = e._info || ""; // 当前错误的额外信息 最终上报到info
+    var stack = e.stack || "";
+    var _stack = {
+      info: stack,
+      file: e.file || "",
+      line: e.line || "",
+      col: e.col || "",
+    };
+    if (_stack.file == "") {
+      // 提取file line col
+      var stackArr = stack.split(/\bat\b/);
+      if (stackArr && stackArr[1]) {
+        var match = /(https?:\/\/[^\n]+)\:(\d+)\:(\d+)/.exec(stackArr[1]);
+        if (match) {
+          //若stack提取的file line col跟e中的属性不一致，以stack为准 但在e._info中记录原始数据
+          if (match[1] && match[1] != _stack.file) {
+            _stack.file && (e._info += " [file: " + _stack.file + " ]");
+            _stack.file = match[1];
+          }
+          if (match[2] && match[2] != _stack.line) {
+            _stack.line && (e._info += " [line: " + _stack.line + " ]");
+            _stack.line = match[2];
+          }
+          if (match[3] && match[3] != _stack.col) {
+            _stack.col && (e._info += " [col: " + _stack.col + " ]");
+            _stack.col = match[3];
+          }
+        }
+      }
+    }
+    //替换堆栈中的文件路径 combojs太长
+    if (_stack && _stack.file && _stack.file.length > 0) {
+      _stack.info = _stack.info.replace(new RegExp(_stack.file.split("?")[0], "gi"), "__FILE__")
+    }
+    //堆栈路径只保存文件名
+    if (_.BadJs.ignorePath) {
+      _stack.info = _stack.info.replace(/http(s)?\:[^:\n]*\//ig, "").replace(/\n/gi, "");
+    }
+    return _stack;
+  }
+  //兜底方法
+  window.addEventListener && window.addEventListener('error', _.BadJs.winErr);
+  window.addEventListener && window.addEventListener('unhandledrejection', _.BadJs.winErr);
+  return _.BadJs;
+})(WX_BJ_REPORT);
+window.WX_BJ_REPORT = WX_BJ_REPORT;
+/**
+ * 兼容wap项目的简单CMD管理
+ * 所有wap项目必须包含此文件才可以执行成功
+ * 暴露在全局的变量仍然以seajs为命名空间，跟web项目保持一致
+ * 支持的API是seajs.use，以及require define
+ * @author raphealguo
+ * @date 20140326
+ */
+function __moonf__() {
+  if (window.__moonhasinit) return;
+  window.__moonhasinit = true;
+  window.__moonclientlog = []; // moon中存到客户端日志里面的内容，最终写入到客户端的地点在fereport.js
+  if (typeof JSON != "object") { //针对IE7的hack
+    window.JSON = {
+      stringify: function() { return ""; },
+      parse: function() { return {}; }
+    };
+  }
+  var moon_init = function() {
+    // 前端的@cunjinli
+    (function() {
+      // @cunjinli 重写alert函数, moonsafe监控
+      var _alert = window.alert;
+      window.__alertList = [];
+      window.alert = function(msg) {
+        _alert(msg);
+        window.__alertList.push(msg);
+      };
+    })();
+    /**
+     * moonsafe @cunjinli 加在这里
+     */
+    (function() {
+      // if (window.__nonce_str) {
+      //   var __old_createElement = document.createElement;
+      //   document.createElement = function(tagName) {
+      //     var node = __old_createElement.apply(this, arguments);
+      //     if (typeof tagName == 'object') {
+      //       tagName = tagName.toString();
+      //     }
+      //     if (typeof tagName == 'string' && tagName.toLowerCase() == 'script') {
+      //       node.setAttribute("nonce", window.__nonce_str);
+      //     }
+      //     return node;
+      //   }
+      // }
+      if (window.addEventListener && window.__DEBUGINFO && Math.random() < 0.01) {
+        window.addEventListener("load", function() {
+          var node = document.createElement('script');
+          node.src = __DEBUGINFO.safe_js;
+          node.type = 'text/javascript';
+          node.async = true;
+          var head = document.head || (document.getElementsByTagName("head")[0]);
+          head.appendChild(node);
+        });
+      }
+    })();
+    /**
+     * mooncatch
+     * 对各种异步回调都使用try catch错误上报
+     * @radeonwu raphealguo
+     */
+    (function() {
+      var inWx = (/MicroMessenger/i).test(navigator.userAgent);
+      var inMp = (/MPAPP/i).test(navigator.userAgent);
+      var _idkey = 121261; //上报的idkey 添加默认上报值
+      var _startKey; //开始的key
+      var _limit; //上报的key的长度
+      var _badjsId;
+      var _reportOpt; //上报的额外信息
+      var _extInfo; //附加的预留字段，如网络采样率采样率network_rate， 总体上报率rate
+      var MOON_LISTENER_ERROR_KEY_OFFSET = 2; //addEventListener上报时的偏移量为2
+      var MOON_AJAX_NETWORK_OFFSET = 4; //network错误时的上报偏移量为4，这里在ajax.js中上报，这里需要加入采样率
+      var MOON_ASYNC_ERROR_KEY_OFFSET = 9; //setTimeout和setInterval上报时的偏移量为9
+      var MOON_LOCALSTORAGE_ERROR_KEY_OFFSET = 10; //localstorage.setItem失败时的偏移量为10
+      window.__initCatch = function(opt) {
+        _idkey = opt.idkey;
+        _startKey = opt.startKey || 0;
+        _limit = opt.limit;
+        _badjsId = opt.badjsId;
+        _reportOpt = opt.reportOpt || "";
+        _extInfo = opt.extInfo || {};
+        _extInfo.rate = _extInfo.rate || 0.5;
+      }
+      //暴露的上报函数，供core.js和ajax.js上报错误使用，array = [{offset:MOON_JSAPI_KEY_OFFSET, log:"ready", e:e}]
+      window.__moon_report = function(array, rate_opt) {
+        var isAcrossOrigin = false;
+        var href = '';
+        try {
+          href = top.location.href;
+        } catch (e) {
+          isAcrossOrigin = true;
+        }
+        var rate = 0.5;
+        if (!!_extInfo && !!_extInfo.rate) {
+          rate = _extInfo.rate;
+        }
+        if (!!rate_opt && (typeof rate_opt == 'number')) {
+          rate = rate_opt;
+        }
+        if (
+          (!(/mp\.weixin\.qq\.com/).test(location.href) && !(/payapp\.weixin\.qq\.com/).test(location.href)) ||
+          Math.random() > rate ||
+          !(inWx || inMp) ||
+          (top != window && !isAcrossOrigin && !(/mp\.weixin\.qq\.com/).test(href))
+        ) {
+          //return ;
+        }
+        if (isObject(array))
+          array = [array];
+        if (!isArray(array) || _idkey == '')
+          return;
+        var data = "";
+        var log = []; //存放array中每个对象关联的log
+        var key = []; //存放array中每个上报的key
+        var val = []; //存放array中每个上报的value
+        var idkey = [];
+        //如果这里没有opt.limit，直接上报到startKey
+        if (typeof _limit != "number") {
+          _limit = Infinity;
+        }
+        for (var i = 0; i < array.length; i++) {
+          var item = array[i] || {};
+          if (item.offset > _limit) continue; //上报的偏移量超过limit
+          if (typeof item.offset != "number") continue;
+          if (item.offset == MOON_AJAX_NETWORK_OFFSET && !!_extInfo && !!_extInfo.network_rate && Math.random() >= _extInfo.network_rate) {
+            continue;
+          }
+          //log[i] = item.log || "";
+          var k = _limit == Infinity ? _startKey : (_startKey + item.offset);
+          log[i] = (("[moon]" + _idkey + "_" + k + ";") + item.log + ";" + getErrorMessage(item.e || {})) || "";
+          key[i] = k;
+          val[i] = 1;
+        }
+        for (var j = 0; j < key.length; j++) {
+          idkey[j] = _idkey + "_" + key[j] + "_" + val[j];
+          data = data + "&log" + j + "=" + log[j];
+        }
+        if (idkey.length > 0) {
+          // sendReport("idkey=" + idkey.join(";") + "&lc=" + log.length + data);
+          sendReport("POST", location.protocol + '//mp.weixin.qq.com/mp/jsmonitor?', "idkey=" + idkey.join(";") + "&r=" + Math.random() + "&lc=" + log.length + data);
+          // 把图文消息的错误上报一份到badjs，只支持get请求
+          // 这里由于量比较大，把badjs的内层怼爆了，这里加多一个采样，并且去掉用户的信息
+          var rate = 1;
+          if (_extInfo && _extInfo.badjs_rate) { // 初始化时的badjs采样率
+            rate = _extInfo.badjs_rate;
+          }
+          if (Math.random() < rate) {
+            data = data.replace(/uin\:(.)*\|biz\:(.)*\|mid\:(.)*\|idx\:(.)*\|sn\:(.)*\|/, '');
+            if(!!_badjsId){
+              var _img = new Image();
+              var _src = 'https://badjs.weixinbridge.com/badjs?id=' + _badjsId + '&level=4&from=' + encodeURIComponent(location.host) + '&msg=' + encodeURIComponent(data);
+              _img.src = _src.slice(0, 1024);
+            }
+            // badjs同时报一份到新监控 
+            if (typeof WX_BJ_REPORT != "undefined" && WX_BJ_REPORT.BadJs) {
+              for (var i = 0; i < array.length; i++) {
+                var item = array[i] || {};
+                if (item.e) {
+                  WX_BJ_REPORT.BadJs.onError(item.e,{_info:item.log});
+                } else {
+                  var name = /[^:;]*/.exec(item.log)[0];
+                  WX_BJ_REPORT.BadJs.report(name, item.log, { mid: "mmbizwap:Monitor" });
+                }
+              }
+            }
+          } else {
+            //虽然采样没有执行 但实际是有被BadJs.onError，置位一下
+            for (var i = 0; i < array.length; i++) {
+              var item = array[i] || {};
+              if (item.e) {
+                item.e.BADJS_EXCUTED = true;
+              }
+            }
+          }
+        }
+      }
+      function isArray(obj) { //判断输入是否为数组
+        return Object.prototype.toString.call(obj) === '[object Array]';
+      }
+      function isObject(obj) { //判断输入是否为对象
+        return Object.prototype.toString.call(obj) === '[object Object]';
+      }
+      function getErrorMessage(e) {
+        var stack = e.stack + ' ' + e.toString() || ""; //错误堆栈信息
+        try {
+          //先取出res域名
+          if (!window.testenv_reshost) {
+            stack = stack.replace(/http(s)?:\/\/res\.wx\.qq\.com/g, "");
+          } else {
+            var host = 'http(s)?://' + window.testenv_reshost;
+            var reg = new RegExp(host, 'g');
+            stack = stack.replace(reg, "");
+          }
+          //提取最后一个.js前边的
+          var reg = /\/([^.]+)\/js\/(\S+?)\.js(\,|:)?/g;
+          while (reg.test(stack)) {
+            // stack = stack.replace(reg, "3"); 解决$问题
+            stack = stack.replace(reg, function(a, b, c, d, e, f) {
+              return c + d
+            });
+          }
+        } catch (e) {
+          stack = e.stack ? e.stack : "" //错误堆栈信息
+        }
+        var ret = [];
+        for (o in _reportOpt) {
+          if (_reportOpt.hasOwnProperty(o)) {
+            ret.push(o + ":" + _reportOpt[o]);
+          }
+        }
+        ret.push("STK:" + stack.replace(/\n/g, ""));
+        return ret.join("|");
+      }
+      function sendReport(type, url, data) { //post方法用于提交数据
+        if (!/^mp\.weixin\.qq\.com$/.test(location.hostname)) { //非MP域名使用 img方式上报
+          var tmp = [];
+          data = data.replace(location.href, (location.origin || "") + (location.pathname || "")).replace("#wechat_redirect", "").replace("#rd", "").split("&");
+          for (var i = 0, il = data.length; i < il; i++) {
+            var a = data[i].split("=");
+            if (!!a[0] && !!a[1]) {
+              tmp.push(a[0] + "=" + encodeURIComponent(a[1]));
+            }
+          }
+          var _img = new window.Image();
+          _img.src = (url + tmp.join("&")).substr(0, 1024);
+          return;
+        }
+        var xmlobj; //定义XMLHttpRequest对象  
+        if (window.ActiveXObject) { //如果当前浏览器支持Active Xobject，则创建ActiveXObject对象    
+          try {
+            xmlobj = new ActiveXObject("Msxml2.XMLHTTP");
+          } catch (e) {
+            try {
+              xmlobj = new ActiveXObject("Microsoft.XMLHTTP");
+            } catch (E) {
+              xmlobj = false;
+            }
+          }
+        } else if (window.XMLHttpRequest) { //如果当前浏览器支持XMLHttpRequest，则创建XMLHttpRequest对象  
+          xmlobj = new XMLHttpRequest();
+        }
+        if (!xmlobj) return;
+        //xmlobj.open("POST", location.protocol + "//mp.weixin.qq.com/mp/jsmonitor?", true);         
+        xmlobj.open(type, url, true);
+        xmlobj.setRequestHeader("cache-control", "no-cache");
+        xmlobj.setRequestHeader("Content-Type", "application/x-www-form-urlencoded; charset=UTF-8"); //设置请求头信息              
+        xmlobj.setRequestHeader("X-Requested-With", "XMLHttpRequest");
+        xmlobj.send(data); //发送数据  
+      }
+      function catTimeout(foo) {
+        return function(cb, timeout) {
+          if (typeof cb === 'string') {
+            try {
+              cb = new Function(cb);
+            } catch (err) {
+              throw err;
+            }
+          }
+          var args = [].slice.call(arguments, 2);
+          var _cb = cb;
+          cb = function() {
+            try {
+              return _cb.apply(this, (args.length && args) || arguments);
+            } catch (error) {
+              if (error.stack && console && console.error) { //chrome有bug，特定情况下看不到throw的error，这里console.error下，防止给调试留坑
+                console.error("[TryCatch]" + error.stack);
+              }
+              if (!!_idkey && !!window.__moon_report) { //没有初始化_key，直接throw error
+                //sendReport(error);
+                window.__moon_report([{ offset: MOON_ASYNC_ERROR_KEY_OFFSET, log: "timeout_error;host:" + location.host, e: error }]);
+                //breakOnError(timeoutkey);
+              }
+              throw error;
+            }
+          }
+          return foo(cb, timeout);
+        };
+      };
+      window.setTimeout = catTimeout(window.setTimeout);
+      window.setInterval = catTimeout(window.setInterval);
+      if (Math.random() < 0.01 && !!window.Document && !!window.HTMLElement) {
+        var cb_map = {};
+        var moon_lid = 0;
+        function catAddListener(foo) {
+          return function(type, cb, useCapture) {
+            if (typeof useCapture === "undefined") {
+              var useCapture = false;
+            }
+            var that = this;
+            var _cb = cb || function() {};
+            cb = function() {
+              try {
+                //arguments[0].currentTarget.setAttribute("data-moon_lid") = moon_lid;
+                //_cb.moon_lid = moon_lid;
+                return _cb.apply(that, arguments);
+              } catch (error) {
+                if (error.stack && console && console.error) { //chrome有bug，特定情况下看不到throw的error，这里console.error下，防止给调试留坑
+                  console.error("[TryCatch]" + error.stack);
+                }
+                if (!!_idkey && !!window.__moon_report) { //没有初始化_key，直接throw error
+                  window.__moon_report([{ offset: MOON_LISTENER_ERROR_KEY_OFFSET, log: "listener_error;type:" + type + ";host:" + location.host, e: error }]);
+                  //breakOnError(timeoutkey);
+                }
+                throw error;
+              }
+            }
+            _cb.moon_lid = moon_lid;
+            cb_map[moon_lid] = cb;
+            moon_lid++;
+            return foo.call(that, type, cb, useCapture);
+          }
+        }
+        function catRemoveListener(foo) {
+          return function(type, cb, useCapture) {
+            if (typeof useCapture === "undefined") {
+              var useCapture = false;
+            }
+            var that = this;
+            cb = cb_map[cb.moon_lid];
+            return foo.call(that, type, cb, useCapture);
+          }
+        }
+        Document.prototype.addEventListener = catAddListener(Document.prototype.addEventListener);
+        Document.prototype.removeEventListener = catRemoveListener(Document.prototype.removeEventListener);
+        HTMLElement.prototype.addEventListener = catAddListener(HTMLElement.prototype.addEventListener);
+        HTMLElement.prototype.removeEventListener = catRemoveListener(HTMLElement.prototype.removeEventListener);
+      }
+      //alert("setItem begin");
+      //window.localStorage.setItem = function(){a=c;}//故意
+      var ua = window.navigator.userAgent;
+      if ((/ip(hone|ad|od)/i.test(ua) || /android/i.test(ua)) && !/windows phone/i.test(ua) && !!window.localStorage && !!window.localStorage.setItem) {
+        var _setItem = window.localStorage.setItem;
+        var count = 0;
+        window.localStorage.setItem = function(k, v) {
+          if (count >= 10) { //一直失败 不要再继续试了，可能类似safari无痕模式 不允许写入了
+            return;
+          }
+          try {
+            _setItem.call(window.localStorage, k, v);
+          } catch (error) {
+            //alert(error);
+            if (error.stack && console && console.error) { //chrome有bug，特定情况下看不到throw的error，这里console.error下，防止给调试留坑
+              console.error("[TryCatch]" + error.stack);
+            }
+            window.__moon_report([{ offset: MOON_LOCALSTORAGE_ERROR_KEY_OFFSET, log: "localstorage_error;" + error.toString(), e: error }]);
+            count++;
+            if (count >= 3 && !!window.moon && window.moon.clear) {
+              // 可能爆满 清理一下localstorage
+              moon.clear();
+            }
+          }
+        }
+        //alert("setItem end");
+      }
+    })();
+    // 后面的@cunjinli
+  };
+  moon_init();
+  //由于moon异步化，所以有些逻辑需要moon加载完之后才执行的 放到全局callback函数__moon_initcallback里边
+  (!!window.__moon_initcallback) && (window.__moon_initcallback());
+}
+// 为适应inline逻辑，有map时才主动自执行 @zhikaimai
+// if (typeof window.moon_map == 'object') {
+//     __moonf__();
+// }
+__moonf__();
+
+if (!!window.addEventListener){
+  window.addEventListener("load",function(){
+    var MOON_SCRIPT_ERROR_KEY_OFFSET = 1; //script上报时的偏移量为1
+    var ns = document.querySelectorAll("[reportloaderror]");
+    for(var ni=0,nl=ns.length;ni<nl;ni++)
+      ns[ni].onerror=function(ev){
+        window.__moon_report([{ offset: MOON_SCRIPT_ERROR_KEY_OFFSET, log: "load_script_error:" + ev.target.src, e: new Error('LoadResError') }], 1);
+        window.WX_BJ_REPORT.BadJs.report("load_script_error", ev.target.src, { mid: "mmbizwap:Monitor" });
+      };
+  });
+}
+</script>
+
+    <script type="text/javascript" nonce="1102006763" reportloaderror>
+  var testRdmUrl = '//res.wx.qq.com/mmbizwap/zh_CN/htmledition/images/pic/common/avatar_default5e7895.svg';
+  // 如果是资源是mp域名，则是rdm环境
+  if (testRdmUrl.indexOf('mp.weixin.qq.com') > 0) {
+    window.__allowLoadResFromMp = true; // 允许从mp.weixin.qq.com加载js资源
+    window.__loadAllResFromMp = true; // 所有js资源都从mp域名加载
+
+    // 给底色加个原谅绿
+    // document.documentElement.style.boxShadow = 'inset 0 0 15px green';
+  }
+</script>
+
+
+    
+
+  
+  <meta name="description" content="闲谈随笔，谈一下对最近市场的一些所思所闻。" />
+  <meta name="author" content="伯庸书院" />
+
+  
+  <meta property="og:title" content="以周期思维看待当下行情，不必悲观" />
+  <meta property="og:url" content="" />
+  <meta property="og:image" content="http://mmbiz.qpic.cn/mmbiz_jpg/qGHSSMNJuhN9O3rBlnJe7nnP2zWAdY6l5plOYgBwT2ibmRyYZsTJXQbzwribywwiavh1kLmOcUL3bFjH0mNlQYjxg/0?wx_fmt=jpeg" />
+  <meta property="og:description" content="闲谈随笔，谈一下对最近市场的一些所思所闻。" />
+  <meta property="og:site_name" content="微信公众平台" />
+  <meta property="og:type" content="article" />
+  <meta property="og:article:author" content="伯庸书院" />
+
+  
+  <meta property="twitter:card" content="summary" />
+  <meta property="twitter:image" content="http://mmbiz.qpic.cn/mmbiz_jpg/qGHSSMNJuhN9O3rBlnJe7nnP2zWAdY6l5plOYgBwT2ibmRyYZsTJXQbzwribywwiavh1kLmOcUL3bFjH0mNlQYjxg/0?wx_fmt=jpeg" />
+  <meta property="twitter:title" content="以周期思维看待当下行情，不必悲观" />
+  <meta property="twitter:creator" content="伯庸书院" />
+  <meta property="twitter:site" content="微信公众平台" />
+  <meta property="twitter:description" content="闲谈随笔，谈一下对最近市场的一些所思所闻。" />
+
+
+    <title></title>
+    
+<style>
+</style>
+
+
+    
+<script type="module" nonce="1102006763" reportloaderror>!function(){try{new Function("m","return import(m)")}catch(o){console.warn("vite: loading legacy build because dynamic import is unsupported, syntax error above should be ignored");var e=document.getElementById("vite-legacy-polyfill"),n=document.createElement("script");n.src=e.src,n.onload=function(){System.import(document.getElementById('vite-legacy-entry').getAttribute('data-src'))},document.body.appendChild(n)}}();</script>
+<script type="module" crossorigin src="//res.wx.qq.com/mmbizwap/zh_CN/htmledition/js/../mmbizappmsg/assets/appmsg.8e45782d.l46y0xft5e7899.js" nonce="1102006763" reportloaderror></script>
+<link rel="modulepreload" href="//res.wx.qq.com/mmbizwap/zh_CN/htmledition/js/../mmbizappmsg/assets/sprite.aebb54cf.l46y0xft5e7899.js" reportloaderror>
+<link rel="modulepreload" href="//res.wx.qq.com/mmbizwap/zh_CN/htmledition/js/../mmbizappmsg/assets/vendor.71facfe1.l46y0xft5e7899.js" reportloaderror>
+<link rel="modulepreload" href="//res.wx.qq.com/mmbizwap/zh_CN/htmledition/js/../mmbizappmsg/assets/report.486c2a3a.l46y0xft5e7899.js" reportloaderror>
+<link rel="modulepreload" href="//res.wx.qq.com/mmbizwap/zh_CN/htmledition/js/../mmbizappmsg/assets/wxwork_hidden.88c468e4.l46y0xft5e7899.js" reportloaderror>
+<link rel="modulepreload" href="//res.wx.qq.com/mmbizwap/zh_CN/htmledition/js/../mmbizappmsg/assets/loadscript.9fb2af3a.l46y0xft5e7899.js" reportloaderror>
+<link rel="modulepreload" href="//res.wx.qq.com/mmbizwap/zh_CN/htmledition/js/../mmbizappmsg/assets/voice_component.6e51f0fa.l46y0xft5e7899.js" reportloaderror>
+<link rel="modulepreload" href="//res.wx.qq.com/mmbizwap/zh_CN/htmledition/js/../mmbizappmsg/assets/bottom_modal.f7568bfb.l46y0xft5e7899.js" reportloaderror>
+<link rel="modulepreload" href="//res.wx.qq.com/mmbizwap/zh_CN/htmledition/js/../mmbizappmsg/assets/outer_link.a527fc9d.l46y0xft5e7899.js" reportloaderror>
+<link rel="modulepreload" href="//res.wx.qq.com/mmbizwap/zh_CN/htmledition/js/../mmbizappmsg/assets/review_image.7b020e1d.l46y0xft5e7899.js" reportloaderror>
+<link rel="modulepreload" href="//res.wx.qq.com/mmbizwap/zh_CN/htmledition/js/../mmbizappmsg/assets/controller.63141957.l46y0xft5e7899.js" reportloaderror>
+<link rel="modulepreload" href="//res.wx.qq.com/mmbizwap/zh_CN/htmledition/js/../mmbizappmsg/assets/see_more.f50b43d4.l46y0xft5e7899.js" reportloaderror>
+<link rel="modulepreload" href="//res.wx.qq.com/mmbizwap/zh_CN/htmledition/js/../mmbizappmsg/assets/modal.719e9b0a.l46y0xft5e7899.js" reportloaderror>
+
+
+
+
+
+
+
+
+
+
+<link rel="stylesheet" href="//res.wx.qq.com/mmbizwap/zh_CN/htmledition/js/../mmbizappmsg/assets/appmsg.67c14a27.l46y0xft5e7899.css" reportloaderror>
+<link rel="stylesheet" href="//res.wx.qq.com/mmbizwap/zh_CN/htmledition/js/../mmbizappmsg/assets/sprite.dcee1002.l46y0xft5e7899.css" reportloaderror>
+<link rel="stylesheet" href="//res.wx.qq.com/mmbizwap/zh_CN/htmledition/js/../mmbizappmsg/assets/report.301986bf.l46y0xft5e7899.css" reportloaderror>
+<link rel="stylesheet" href="//res.wx.qq.com/mmbizwap/zh_CN/htmledition/js/../mmbizappmsg/assets/bottom_modal.b586fc86.l46y0xft5e7899.css" reportloaderror>
+<link rel="stylesheet" href="//res.wx.qq.com/mmbizwap/zh_CN/htmledition/js/../mmbizappmsg/assets/controller.cfc5752a.l46y0xft5e7899.css" reportloaderror>
+<link rel="stylesheet" href="//res.wx.qq.com/mmbizwap/zh_CN/htmledition/js/../mmbizappmsg/assets/see_more.3d89d3d2.l46y0xft5e7899.css" reportloaderror>
+
+    <style>
+      .cooldown_tips {
+        margin: 30px auto;
+        margin-top: 0;
+        display: flex;
+        align-items: center;
+        padding: 10px;
+        font-size: 14px;
+        background-color: #f6f7f9;
+        border-radius: 6px;
+      }   
+      .cooldown_tips_icon {
+        display: block;
+        width: 18px;
+        height: 18px;
+        margin-right: 8px;
+      }
+    </style>
+  </head>
+
+  <body id="activity-detail" class="zh_CN wx_wap_page 
+
+                                            wx_wap_desktop_fontsize_2    sougou_body
+ comment_feature
+ discuss_tab appmsg_skin_default appmsg_style_default">
+    
+    
+<script type="text/javascript" nonce="1102006763" reportloaderror>
+  var biz = "MzUzNDg3OTE2Mw==" || "";
+  var sn = "" || "" || "";
+  var mid = "2247489568" || "" || "";
+  var idx = "1" || "" || "";
+  window.__allowLoadResFromMp = true; // 允许从mp.weixin.qq.com加载js资源
+  // window.__loadAllResFromMp = true; // 所有js资源都从mp域名加载
+</script>
+
+<script  nonce="1102006763" reportloaderror>
+var page_begintime = (+new Date());
+// 辟谣需求
+var is_rumor = "";
+var norumor = "";
+if (!!(is_rumor * 1) && !(norumor*1) && !!biz && !!mid) {
+  if (!document.referrer || document.referrer.indexOf("mp.weixin.qq.com/mp/rumor") == -1){
+    location.href = "http://mp.weixin.qq.com/mp/rumor?action=info&__biz=" + biz + "&mid=" + mid + "&idx=" + idx + "&sn=" + sn + "#wechat_redirect";
+  }
+}
+</script>
+
+<script type="text/javascript" src="//res.wx.qq.com/mmbizwap/zh_CN/htmledition/js/biz_wap/safe/inline_mutation_observer5e7896.js" nonce="1102006763" reportloaderror></script>
+
+    <link rel="dns-prefetch" href="//res.wx.qq.com" reportloaderror>
+<link rel="dns-prefetch" href="//mmbiz.qpic.cn" reportloaderror>
+<link rel="dns-prefetch" href="https://wxa.wxs.qq.com" reportloaderror>
+<link rel="shortcut icon" type="image/x-icon" href="//res.wx.qq.com/a/wx_fed/assets/res/NTI4MWU5.ico" reportloaderror>
+<link rel="mask-icon" href="//res.wx.qq.com/a/wx_fed/assets/res/MjliNWVm.svg" color="#4C4C4C" reportloaderror>
+<link rel="apple-touch-icon-precomposed" href="//res.wx.qq.com/a/wx_fed/assets/res/OTE0YTAw.png" reportloaderror>
+<script type="text/javascript" nonce="1102006763" reportloaderror>
+String.prototype.html = function (encode) {
+  var replace = ["&#39;", "'", "&quot;", '"', "&nbsp;", " ", "&gt;", ">", "&lt;", "<", "&yen;", "¥", "&amp;", "&"];
+  // 最新版的safari 12有一个BUG，如果使用字面量定义一个数组，var a = [1, 2, 3]
+  // 当调用了 a.reverse() 方法把变量 a 元素顺序反转成 3, 2, 1 后，
+  // 即使此页面刷新了， 或者此页面使用 A标签、 window.open 打开的页面，
+  // 只要调用到同一段代码， 变量 a 的元素顺序都会变成 3, 2, 1
+  // 所以这里不用 reverse 方法
+  /*
+  if (encode) {
+      replace.reverse();
+  }*/
+  var replaceReverse = ["&", "&amp;", "¥", "&yen;", "<", "&lt;", ">", "&gt;", " ", "&nbsp;", '"', "&quot;", "'", "&#39;"];
+  var target;
+  if (encode) {
+    target = replaceReverse;
+  } else {
+    target = replace;
+  }
+  for (var i = 0, str = this; i < target.length; i += 2) {
+    str = str.replace(new RegExp(target[i], 'g'), target[i + 1]);
+  }
+  return str;
+};
+
+window.isInWeixinApp = function () {
+  return /MicroMessenger/.test(navigator.userAgent);
+};
+
+window.getQueryFromURL = function (url) {
+  url = url || 'http://qq.com/s?a=b#rd'; // 做一层保护，保证URL是合法的
+  var tmp = url.split('?'),
+    query = (tmp[1] || "").split('#')[0].split('&'),
+    params = {};
+  for (var i = 0; i < query.length; i++) {
+    var arg = query[i].split('=');
+    params[arg[0]] = arg[1];
+  }
+  if (params['pass_ticket']) {
+    params['pass_ticket'] = encodeURIComponent(params['pass_ticket'].html(false).html(false).replace(/\s/g, "+"));
+  }
+  return params;
+};
+
+(function () {
+  var params = getQueryFromURL(location.href);
+  window.uin = params['uin'] || "" || '';
+  window.key = params['key'] || "" || '';
+  window.wxtoken = params['wxtoken'] || '';
+  window.pass_ticket = params['pass_ticket'] || '';
+  window.appmsg_token = "";
+})();
+</script>
+    
+<script type="text/javascript" nonce="1102006763" reportloaderror>window.PAGE_MID="mmbizwap:appmsg/newindex.html"</script>
+<script type="text/javascript" nonce="1102006763" reportloaderror>
+  var write_sceen_time = (+new Date());
+  var preview = "" * 1 || 0;
+
+  var currencyMap = {
+    'USD': '$',
+    'HKD': 'HK$',
+    'CAD': 'C$',
+    'AUD': 'A$',
+    'TWD': 'NT$',
+    'JPY': 'JPY￥',
+    'EUR': '€',
+    'SGD': 'S$',
+    'GBP': '£',
+    'NZD': 'NZ$',
+    'MYR': 'RM',
+    'KZT': '〒',
+    'KRW': '₩',
+    'THB': '฿',
+    'PHP': '₱',
+    'TRY': '₺',
+    'MXN': 'Mex$',
+    'CNY': '￥'
+  };
+  var can_use_wecoin = '1' * 1; // 是否个人号
+  var wecoin_tips = '0' * 1; // 是否出教育弹窗
+  /* var can_use_wecoin = 1; */
+  var wecoin_amount = '0' * 1; // 微信豆个数
+</script>
+
+<div id="js_article" class="rich_media">
+  
+  <div id="js_top_ad_area" class="top_banner"></div>
+  
+  <div class="rich_media_inner">
+    
+    
+    <div id="page-content" class="rich_media_area_primary">
+      <div class="rich_media_area_primary_inner">
+        
+        
+        
+                <div id="img-content" class="rich_media_wrp">
+          
+          <h1 class="rich_media_title " id="activity-name">
+            
+以周期思维看待当下行情，不必悲观
+          </h1>
+          <div id="meta_content" class="rich_media_meta_list">
+                                      <span id="copyright_logo" class="wx_tap_link js_wx_tap_highlight rich_media_meta icon_appmsg_tag appmsg_title_tag weui-wa-hotarea">原创</span>
+                                                      <span class="rich_media_meta rich_media_meta_text">
+                                                                                    <span role="link" tabindex="0" id="js_author_name" class="wx_tap_link js_wx_tap_highlight rich_media_meta_link weui-wa-hotarea" datarewardsn="" datatimestamp="" datacanreward="0">伯庸书院</span>
+                                                                            </span>
+                                      
+                                                                <span class="rich_media_meta rich_media_meta_nickname" id="profileBt">
+              <a href="javascript:void(0);" class="wx_tap_link js_wx_tap_highlight weui-wa-hotarea" id="js_name">
+                伯庸智库              </a>
+              <div id="js_profile_qrcode" aria-hidden="true" class="profile_container" style="display:none;">
+                <div class="profile_inner">
+                  <strong class="profile_nickname">伯庸智库</strong>
+                  <img class="profile_avatar" id="js_profile_qrcode_img" src="" alt="">
+
+                  <p class="profile_meta">
+                  <label class="profile_meta_label">微信号</label>
+                  <span class="profile_meta_value">gh_48235cd3df43</span>
+                  </p>
+
+                  <p class="profile_meta">
+                  <label class="profile_meta_label">功能介绍</label>
+                  <span class="profile_meta_value">雪球吴伯庸唯一公众号，五年十倍公开实盘记录，长期持有七雄圣钻组合，长期致力于打造投资传世之作：伯庸智库必修课程。</span>
+                  </p>
+                </div>
+                <span class="profile_arrow_wrp" id="js_profile_arrow_wrp">
+                  <i class="profile_arrow arrow_out"></i>
+                  <i class="profile_arrow arrow_in"></i>
+                </span>
+              </div>
+            </span>
+            <em id="publish_time" class="rich_media_meta rich_media_meta_text"></em>
+            <em id="js_ip_wording_wrp" class="rich_media_meta rich_media_meta_text" role="option" style="display: none;">发表于<span id="js_ip_wording" ></span></em>
+
+          </div>
+
+          
+                                                    <div id="js_tags" class="article-tag__list" style="display: none;" data-len="0"
+                      >
+                          
+              <div class="article-tag-card__title">收录于合集</div>
+              <div class="article-tags">
+                                                                </div>
+                      </div>
+
+          
+                    
+                                        
+
+          
+                    
+
+          
+                              
+                                        
+                    
+                    
+          
+          <div class="rich_media_content                                       "
+            id="js_content" style="visibility: hidden;">
+            <p style="text-indent: 2em;margin-top: 16px;margin-bottom: 16px;line-height: 2em;"><span style="font-size: 16px;letter-spacing: 1px;">本篇算是闲谈随笔<img class="rich_pages wxw-img" data-ratio="1" src="https://images.weserv.nl/?url=https://mmbiz.qpic.cn/mmbiz_png/qGHSSMNJuhN9O3rBlnJe7nnP2zWAdY6lKKEPvYOpMIhyia82vvIcupicmzJibHYNyPTfSQ4DBLqHjmJyHakbg1SCg/640?wx_fmt=png" data-type="png" data-w="20" style="display:inline-block;width:20px;vertical-align:text-bottom;"  />，谈一下对最近市场的一些所思所闻。</span></p><p style="text-indent: 2em;margin-top: 16px;margin-bottom: 16px;line-height: 2em;"><span style="font-size: 16px;letter-spacing: 1px;">不知从何时起，我越来越坚定一点，真正把投资做透的人，熊市会兴奋，牛市会担忧，我一直以来的观察也正是如此，为何他们熊市不会恐慌反而兴奋呢？很重要的一点，因为他们脑子里都装着</span><span style="font-size: 16px;letter-spacing: 1px;color: rgb(123, 12, 0);">周期思维</span><span style="font-size: 16px;letter-spacing: 1px;">，他们经历并了解市场周期的一向规律和德性，所以他们没有跟随其他大众恐慌焦虑，而是像一只旁观的狼一样客观淡定的观察着市场发生的一切。</span></p><p style="text-indent: 2em;margin-top: 16px;margin-bottom: 16px;line-height: 2em;"><span style="font-size: 16px;letter-spacing: 1px;">整体来看，港股方面，</span><span style="font-size: 16px;letter-spacing: 1px;color: rgb(123, 12, 0);">市场对风险回避过大，a股风险回避适中。</span></p><p style="text-align: center;margin-bottom: 0em;"><img class="rich_pages wxw-img" data-galleryid="" data-ratio="0.5944558521560575" data-s="300,640" src="https://images.weserv.nl/?url=https://mmbiz.qpic.cn/mmbiz_png/qGHSSMNJuhN9O3rBlnJe7nnP2zWAdY6lcVg9WOQzBcNy0bA6vzu6do2DhRhunraDAvoO9GkLePBpLKt3e4obew/640?wx_fmt=png" data-type="png" data-w="974" style=""></p><p style="text-align: center;margin-bottom: 0em;"><img class="rich_pages wxw-img" data-galleryid="" data-ratio="0.5977366255144033" data-s="300,640" src="https://images.weserv.nl/?url=https://mmbiz.qpic.cn/mmbiz_png/qGHSSMNJuhN9O3rBlnJe7nnP2zWAdY6l5VNgx5jzd7cZIuibE8Q9mmjfQJAg5VwlricpulwRM9cjzTHehNJ7dv7w/640?wx_fmt=png" data-type="png" data-w="972" style=""></p><p style="text-indent: 2em;margin-top: 16px;margin-bottom: 16px;line-height: 2em;"><span style="font-size: 16px;letter-spacing: 1px;text-indent: 2em;">港股不少质地不错的企业都被市场先生揍到了个位数pe，很多被一脚踹进了稀泥里，A股个人感觉，整体跌的不算透，算是一脚踹在草地上，估值在历史均值附近。</span><span style="font-size: 16px;letter-spacing: 1px;color: rgb(123, 12, 0);"></span></p><p style="text-indent: 2em;margin-top: 16px;margin-bottom: 16px;line-height: 2em;"><span style="font-size: 16px;letter-spacing: 1px;">从历史的周期规律去看，不管是宏观经济，还是微观企业、市场股价，都不是成直线型发展的，而是呈现</span><span style="font-size: 16px;letter-spacing: 1px;color: rgb(123, 12, 0);">典型的周期波动围绕长期趋势来运行</span><span style="font-size: 16px;letter-spacing: 1px;">，它有个很重要的特征，只需要看下短周期围绕长周期的波动走势图，便知，那就是其大部分时间都在非公允位置运行，在其公允价值（内在价值）只停留极短的时间。</span></p><p style="text-align: center;margin-bottom: 0em;"><img class="rich_pages wxw-img" data-galleryid="" data-ratio="0.5615835777126099" data-s="300,640" src="https://images.weserv.nl/?url=https://mmbiz.qpic.cn/mmbiz_png/qGHSSMNJuhN9O3rBlnJe7nnP2zWAdY6lE8T9jfMyWMCMphxXZvHBibLfZuqc1oVs8Jic61iaqRgfX3CIt1DMySgUQ/640?wx_fmt=png" data-type="png" data-w="682" style=""  /></p><p style="text-indent: 2em;margin-top: 16px;margin-bottom: 16px;line-height: 2em;"><span style="font-size: 16px;letter-spacing: 1px;text-indent: 2em;">也即，市场先生大部分时间都处在略高低估、中度高低估、极度高低估这三个状态区间，其大部分时间不是在摆脱偏离中心位置，就是在回归中心均值的路上，由此周期往返，永不停歇。</span></p><p style="text-indent: 2em;margin-top: 16px;margin-bottom: 16px;line-height: 2em;"><span style="font-size: 16px;letter-spacing: 1px;text-indent: 2em;">关于市场先生的这个“变态德性”我们一定要了解，这是历史老爷子告诉我们的，他跟我们想象中的“股价应该稳定在内在价值附近”相差甚远，为何会这样呢？</span><span style="font-size: 16px;letter-spacing: 1px;text-indent: 2em;">终极原因在于市场的参与者本身都不是理性人，人们的情绪周期引发了一轮轮的市场周期的轮转，其中更细致的逻辑，可参阅周期一书，总之，由于市场参与者跟市场波动之间的情绪共振，导致产生信贷周期、消费周期等其他周期的轮动。</span><span style="font-size: 16px;letter-spacing: 1px;"></span></p><p style="text-indent: 2em;margin-top: 16px;margin-bottom: 16px;line-height: 2em;"><span style="font-size: 16px;letter-spacing: 1px;">理解了这一点，就更能够看透，这一波下跌也并非脱离周期循环的单边崩盘，在历史上，即便是出现过一两次单边崩盘的局面，但很快也进入了反弹周期，也即，从历史去看，</span><span style="font-size: 16px;letter-spacing: 1px;color: rgb(123, 12, 0);">周期轮转没有停止过，没有失效过，在未来也不会。</span></p><p style="text-indent: 2em;margin-top: 16px;margin-bottom: 16px;line-height: 2em;"><span style="font-size: 16px;letter-spacing: 1px;">A股为何说风险回避为适中呢？就拿前期大消费来说，这波也只不过是从过度乐观或过度高估到适度悲观的一波周期下行，前期很多大消费大医药从几年前的二三十倍市盈窜到100多倍市盈，这是一波周期里的上行趋势，从适度低估到适度或过度高估，只是当市场走到周期中高部以上时，很多人认为市场周期已失效，忘记了周期的存在，以为市场会单边上涨，于是极度兴奋，事实上每一波周期中顶部，类似的市场情绪都会上演，但这也只是主观性的美好想象，周期规律不会因为短期的兴奋过度就失效，相反，通常来说，涨势最猛烈的高估区间，也正是周期反转要发挥作用的信号，这一波回调也正是周期波对中心线的回归。</span></p><p style="text-align: center;margin-bottom: 0em;"><img class="rich_pages wxw-img" data-galleryid="" data-ratio="0.5920915712799167" data-s="300,640" src="https://images.weserv.nl/?url=https://mmbiz.qpic.cn/mmbiz_png/qGHSSMNJuhN9O3rBlnJe7nnP2zWAdY6lhDK1nKEGkw6ND58Vfcma1IzkvGOHgPQ18vBNJvdUMNqbGLedX1e4yg/640?wx_fmt=png" data-type="png" data-w="961" style=""  /></p><p style="text-align: center;margin-bottom: 0em;"><img class="rich_pages wxw-img" data-galleryid="" data-ratio="0.6556655665566556" data-s="300,640" src="https://images.weserv.nl/?url=https://mmbiz.qpic.cn/mmbiz_png/qGHSSMNJuhN9O3rBlnJe7nnP2zWAdY6lu9jWgian2pxPicJRTEEdQ6Mu68s9prq8PcXYfbVhyjibbZA3qTMGT4oibA/640?wx_fmt=png" data-type="png" data-w="909" style=""  /></p><p style="text-indent: 2em;margin-top: 16px;margin-bottom: 16px;line-height: 2em;"><span style="font-size: 16px;letter-spacing: 1px;text-indent: 2em;">之前我在想通这点后，也曾为此欣喜，按理说，知道了周期轮转的大概规律，不就掌握了正确的操作战略了吗？</span><span style="font-size: 16px;letter-spacing: 1px;text-indent: 2em;">周期底部买高位卖不就完了么，但事实上，最难的不是理解周期，而是应对周期，他对人性的要求是极为严苛的。</span><span style="font-size: 16px;letter-spacing: 1px;"></span></p><p style="text-indent: 2em;margin-top: 16px;margin-bottom: 16px;line-height: 2em;"><span style="font-size: 16px;letter-spacing: 1px;">第一，</span><span style="font-size: 16px;letter-spacing: 1px;color: rgb(123, 12, 0);">难在不规律。</span></p><p style="text-indent: 2em;margin-top: 16px;margin-bottom: 16px;line-height: 2em;"><span style="font-size: 16px;letter-spacing: 1px;">马克吐温说过一句话，可以很好的概括周期：</span><span style="font-size: 16px;letter-spacing: 1px;color: rgb(123, 12, 0);">历史不会重演细节，但过程却极为相似</span><span style="font-size: 16px;letter-spacing: 1px;">，也就是说，虽然从大级别去看，市场总是以周期波动的方式来运行，这的确不假，但每一波的具体波动情况却跟过去不可能完全一样，正因如此，每次在周期的峰谷位置，它才会让人产生周期已失效的错觉。</span></p><p style="text-indent: 2em;margin-top: 16px;margin-bottom: 16px;line-height: 2em;"><span style="font-size: 16px;letter-spacing: 1px;">何为细节不一样呢？表现在几点：</span><span style="font-size: 16px;letter-spacing: 1px;color: rgb(123, 12, 0);">周期时间，波幅，历史事件</span><span style="font-size: 16px;letter-spacing: 1px;">等，比如上次上行周期四五年，而这次只有一年，这就是周期运转的进度不同，上次波幅顶多到50倍pe，而这次却到了100pe，正是由于人们看到了这次周期波打破了上次的周期运转范围，由此就认为市场周期失效，转而产生“单边上涨”的牛市观点，或心存侥幸，或抑制不住乐观市场的诱惑，最终缴械投降，总之，总有一大批人在周期峰部被市场洗脑投降，其中不乏那些曾经坚定的周期投资者，此类事，在周期底部也是同理。</span></p><p style="text-indent: 2em;margin-top: 16px;margin-bottom: 16px;line-height: 2em;"><span style="font-size: 16px;letter-spacing: 1px;">历史事件也会影响人们对周期阶段的看法，何意呢？本来有些人是用周期思维看待市场运行的，但就是由于在顶底部发生了一些重大历史事件，使得人们认为上行周期会大大延缓，由此在上行周期下买入，这样一旦判断正确，就可以享受单边上涨的顺风车。</span></p><p style="text-indent: 2em;margin-top: 16px;margin-bottom: 16px;line-height: 2em;"><span style="font-size: 16px;letter-spacing: 1px;">比如看过英国经济史的朋友都知道，英国在工业革命之前，国内经济的周期性是非常明显的，但自从工业革命，让日不落照耀了全世界，单边上行周期一走就是十几年，米国二战之后的经济也是因为战争这一重大历史事件，走上十几年长牛，正是因为人们看到了历史事件对周期的破坏作用，所以在每次重大事件时，总有一部分人会产生周期单边上涨的判断。</span></p><p style="text-indent: 2em;margin-top: 16px;margin-bottom: 16px;line-height: 2em;"><span style="font-size: 16px;letter-spacing: 1px;">但也并非每次都为正确，像美国90年代那波互联网泡沫，就是因为互联网科技对人们生活的大幅改变，导致很多专家和投资者产生“</span><span style="font-size: 16px;letter-spacing: 1px;color: rgb(123, 12, 0);">反拐点论</span><span style="font-size: 16px;letter-spacing: 1px;">”，意思是之前到这个火候也该反转了，但由于互联网科技的生产力提升，人们认为经济会在其推动下持续繁荣，不认为这是拐点了，拒绝拐点论（像如今的煤炭，远洋等），由此走出一波击鼓传花的上行预期，但历史用时间证明，周期依然存在，互联网的助推作用被市场高估，由此泡沫破灭，周期依然用那双无形的大手主宰着市场运行。</span></p><p style="text-indent: 2em;margin-top: 16px;margin-bottom: 16px;line-height: 2em;"><span style="font-size: 16px;letter-spacing: 1px;">而这一波的重大历史事件是什么呢？就是疫情，人类不是傻瓜，首先人们确实看到了也感受到了疫情对经济的影响，由此在下行周期波下，产生更为悲观的单边下行甚至崩盘担忧，这就导致市场对风险的规避过度，甚至不允许股价存有一丝的乐观成分，从而导致股价过度下跌，如果能看透这一点，自然内心的淡定就会多一分，所以疫情是周期波下行的催化剂。</span></p><p style="text-indent: 2em;margin-top: 16px;margin-bottom: 16px;line-height: 2em;"><span style="font-size: 16px;letter-spacing: 1px;">那么问题来了，疫情不是发生两年多了吗？又不是刚发生，按理说人们的这种担忧恐惧不是应该更缓和吗？原因恰恰在这，其一，人们在下行周期下，对于消息的解读要更严重，而在上行周期下反而会弱化利空消息的真正影响，这也是行为心理学所验证过的投资心理偏差，一旦下跌，所有消息的解读都充斥着悲观成分，其次，疫情至今两年多，人们所初想的三年之内消灭疫情的预期也已落空，人们越发意识到这是一场长期攻坚战，承认疫情对经济的长期影响预期。</span><span style="font-size: 16px;letter-spacing: 1px;text-indent: 2em;">对于中概来说，</span><span style="font-size: 16px;letter-spacing: 1px;text-indent: 2em;">历史事件为反垄断下的投资并购降温</span><span style="font-size: 16px;letter-spacing: 1px;text-indent: 2em;">。</span></p><p style="text-indent: 2em;margin-top: 16px;margin-bottom: 16px;line-height: 2em;"><span style="font-size: 16px;letter-spacing: 1px;">历史事件对于周期运行而言，最大的特点就是其</span><span style="font-size: 16px;letter-spacing: 1px;color: rgb(123, 12, 0);">预判难度太大</span><span style="font-size: 16px;letter-spacing: 1px;">，几乎超出所有人的能力圈，比如影响经济到何种程度，影响到何时等，这都是很难用逻辑去定量解决的问题，也正因如此，也更加重了市场的情绪担忧。</span></p><p style="text-indent: 2em;margin-top: 16px;margin-bottom: 16px;line-height: 2em;"><span style="font-size: 16px;letter-spacing: 1px;">这就是周期在每一波运转上的细节不同，它每次跟过去都不同。</span></p><p style="text-indent: 2em;margin-top: 16px;margin-bottom: 16px;line-height: 2em;"><span style="font-size: 16px;letter-spacing: 1px;">其二</span><span style="font-size: 16px;letter-spacing: 1px;color: rgb(123, 12, 0);">，难在不可预测。</span></p><p style="text-indent: 2em;margin-top: 16px;margin-bottom: 16px;line-height: 2em;"><span style="font-size: 16px;letter-spacing: 1px;">关于周期何时到底何时到顶，即便是巴芒以及靠做周期债起家的霍华德马克思都无一不承认一点，周期无法预测，就像我们预测不到上一波大消费在疫情之后起飞，又在疯狂中突然极速回撤，更预测不了如今周期下行波还会不会继续下探，这一切都未可知，但不可预测就无法做投资了吗？非也：</span><strong><span style="font-size: 16px;letter-spacing: 1px;color: rgb(123, 12, 0);">虽然无法预测，但可以应对</span></strong><span style="font-size: 16px;letter-spacing: 1px;">。所谓可以应对，就是我们可以通过提前的一些操作使得不管周期未来如何运转，对我们都很难产生不利。</span></p><p style="text-indent: 2em;margin-top: 16px;margin-bottom: 16px;line-height: 2em;"><span style="font-size: 16px;letter-spacing: 1px;">周期最大的不可预测在于历史的峰谷位置，每当下一波周期运行至此，市场都会格外敏感，市场会在这里打一场“小决战”，如果在峰谷位置刚好发生一些重大事件，那极有可能使得人们在峰底部异常兴奋或恐慌，继而产生加速下探或加速赶顶，使人们产生“周期已失效”的错觉，继而追涨杀跌。</span></p><p style="text-align: center;margin-bottom: 0em;"><img class="rich_pages wxw-img" data-galleryid="" data-ratio="0.5743944636678201" data-s="300,640" src="https://images.weserv.nl/?url=https://mmbiz.qpic.cn/mmbiz_png/qGHSSMNJuhN9O3rBlnJe7nnP2zWAdY6lJo6Cc1fzjfdjErknd6rFKUibgibibsibgDF3TWIbKVn0q9qDlBjZR7jTgQ/640?wx_fmt=png" data-type="png" style="" data-w=""  /></p><p style="text-indent: 2em;margin-top: 16px;margin-bottom: 16px;line-height: 2em;"><span style="font-size: 16px;letter-spacing: 1px;text-indent: 2em;">当然，这只是其中一种类型，还有一种是下一波周期运转还没有达到上次周期峰底时，就已经提前拐头，总之，每一波的细节千变万化，但整体的周期运转模式却始终不变，也即</span><span style="font-size: 16px;letter-spacing: 1px;text-indent: 2em;color: rgb(123, 12, 0);">过程相似，韵脚万变。</span></p><p style="text-indent: 2em;margin-top: 16px;margin-bottom: 16px;line-height: 2em;"><span style="font-size: 16px;letter-spacing: 1px;">典型的就是猪周期，回看历史，每波猪周期都不同，但自从非瘟事件后，猪价单边上涨至历史新高，这一重大历史事件，使得部分投资者产生错觉，认为猪周期已经失效，继而高位去追涨买入，市场的过度兴奋使人们忘记常识，猪周期默不作声，悄悄的主导着这一切，不同的是在细节上，它来的那么快那么猛烈，如今猪价跌落至行业成本以下，</span><span style="font-size: 16px;letter-spacing: 1px;color: rgb(123, 12, 0);">我发现又有一些人发出猪周期失效的言论</span><span style="font-size: 16px;letter-spacing: 1px;">，他们担心猪价一落不起，就像担心自己持仓的股票不再反弹一样，他们就像猪狗一样被根深蒂固的动物性所禀赋。</span></p><p style="text-align: center;margin-bottom: 0em;"><img class="rich_pages wxw-img" data-galleryid="" data-ratio="0.6671511627906976" data-s="300,640" src="https://images.weserv.nl/?url=https://mmbiz.qpic.cn/mmbiz_png/qGHSSMNJuhN9O3rBlnJe7nnP2zWAdY6lH8eDPSVNYpjN1DNEZQPz6nzj0SQ8sqBRLZnAzqIlWtX7WCctibhSvng/640?wx_fmt=png" data-type="png" data-w="688" style=""  /></p><p style="text-indent: 2em;margin-top: 16px;margin-bottom: 16px;line-height: 2em;"><span style="text-indent: 2em;font-size: 16px;letter-spacing: 1px;">其三，</span><span style="text-indent: 2em;font-size: 16px;letter-spacing: 1px;color: rgb(123, 12, 0);">难在等待。</span><span style="font-size: 16px;letter-spacing: 1px;"></span></p><p style="text-indent: 2em;margin-top: 16px;margin-bottom: 16px;line-height: 2em;"><span style="font-size: 16px;letter-spacing: 1px;text-indent: 2em;">价投说白了六个字足以概括：低估买，高估卖，凭这六个字足可应对一切周期，既如此，为何还是有大批价投者亏损呢？原因是多方面的，其中一个就是</span><span style="font-size: 16px;letter-spacing: 1px;text-indent: 2em;color: rgb(123, 12, 0);">难在执行。</span></p><p style="text-indent: 2em;margin-top: 16px;margin-bottom: 16px;line-height: 2em;"><span style="font-size: 16px;letter-spacing: 1px;">就拿当下来说，都说低估买，值此下跌期间，有多少人前期买的股票如今割掉，别说买了，能不割就已经不错了，这就是人性，你很难抵抗的住每一波下跌下每日的煎熬、恐慌、悲观论点的扰袭，基金经理们则在担忧清盘，这都是我们每天需要克服的人性弱点，根据经验，如果没有对市场非常深刻的理解洞察力，你很难做到不被影响，由此，低估买，不难理解，难在克服人性去执行。</span></p><p style="text-indent: 2em;margin-top: 16px;margin-bottom: 16px;line-height: 2em;"><span style="font-size: 16px;letter-spacing: 1px;text-indent: 2em;">而高估卖呢？更难，高估的时候通常都是</span><span style="font-size: 16px;letter-spacing: 1px;text-indent: 2em;color: rgb(123, 12, 0);">涨势最好的时候</span><span style="font-size: 16px;letter-spacing: 1px;text-indent: 2em;">，赚钱吸金效应极强，你能控制住手不去追涨已经不错了，更何况让你卖在高估，上一波大消费牛市，我见过太多人以高估位置买入，他们其中不乏一些具有深刻价投理念的老炮，我也见过一些比较坚定的价投者，在牛市期间，能忍住40pe、60pe不去买，但最终还是朝不断创出的新高缴械投降，就像霍华德马克斯在周期中所谈的那样：</span><span style="font-size: 16px;letter-spacing: 1px;text-indent: 2em;color: rgb(123, 12, 0);">总有一些坚定的价投者会在牛市后期投降。</span></p><p style="text-indent: 2em;margin-top: 16px;margin-bottom: 16px;line-height: 2em;"><span style="font-size: 16px;letter-spacing: 1px;text-indent: 2em;">有时，</span><span style="font-size: 16px;letter-spacing: 1px;text-indent: 2em;color: rgb(123, 12, 0);">主宰我们的并不是认知，而是我们对人性心理的把控</span><span style="font-size: 16px;letter-spacing: 1px;text-indent: 2em;">，当那些价投者在100多倍市盈买入时，你当时就可问他们知不知道“低估买高估卖”的六字真言，他们知道，而且也知道周期思维，什么都知道，但结果他就是买进了，无疑，他们败给了人性。</span></p><p style="text-indent: 2em;margin-top: 16px;margin-bottom: 16px;line-height: 2em;"><span style="font-size: 16px;letter-spacing: 1px;">为何等待难，因为它是一个长时期漫长的观望，它可能需要我们等待很多年，才会等到心目中的低估，它更需要我们在观望中，去克服市场不断出现的种种诱惑，这并不容易，一个低估期或高估期，动辄就是一年半载甚至更长，在这期间的每一天，对于一个每天都痴迷或习惯看盘的人来说，都是一种持续的“熬鹰式”洗脑，除非你有很强大的定力，亦或是利用很好的方法进行控制，否则鲜有人能战胜人性，这也是为何在价投理念中，不建议频繁看盘或远离市场的重要原因，像格雷厄姆老巴，都是他们一路经历过来的切身经验。</span></p><p style="text-indent: 2em;margin-top: 16px;margin-bottom: 16px;line-height: 2em;"><span style="font-size: 16px;letter-spacing: 1px;color: rgb(123, 12, 0);">人性通常受不了遥远的未来，等的太久便会厌烦疲惫</span><span style="font-size: 16px;letter-spacing: 1px;">，进而烦躁逆反，这并不稀奇，正因如此，事实上并没有多少人愿意去为了高低估去甘愿等待，太多人被平凡的生活所打败，这也是为何不少人虽懂得周期，但却从未遵顺周期行事的原因。</span></p><p style="text-indent: 2em;margin-top: 16px;margin-bottom: 16px;line-height: 2em;"><span style="font-size: 16px;letter-spacing: 1px;">而真正的投资大师，他们都懂得在周期底部下狠手，而不管其会不会持续下探，不管是巴芒，还是约翰伯格、达利欧等，它们都会忽略周期底部持续恐慌性下探的可能性，因为他们都知道，这事谁也没法预测，大家伙都在采取最佳的应对方式而已，无疑，最佳的应对方式就是在低估期持续买入，其他的交给市场老头和周期先生，如果足够幸运，可能一买入，市场就立马反转，所以，甭管是谁，那些一买入就赶上反转的，不是他们预测能力有多强，而是运气足够好，“倒霉”一点的，可能买入后再下探一段时间，再在成本线以下磨叽个一年半载的，然后缓慢反弹。</span></p><p style="text-align: center;margin-bottom: 0em;"><img class="rich_pages wxw-img" data-galleryid="" data-ratio="0.5716510903426791" data-s="300,640" src="https://images.weserv.nl/?url=https://mmbiz.qpic.cn/mmbiz_png/qGHSSMNJuhN9O3rBlnJe7nnP2zWAdY6ltrNLod5r0vb6cepl9icAYQLYTTbA8OOFZVSbdRysTFIbQCzPEaVzpmw/640?wx_fmt=png" data-type="png" data-w="642" style=""  /></p><p style="text-indent: 2em;margin-top: 16px;margin-bottom: 16px;line-height: 2em;"><span style="text-indent: 2em;font-size: 16px;letter-spacing: 1px;">不管怎样，</span><span style="text-indent: 2em;font-size: 16px;letter-spacing: 1px;color: rgb(123, 12, 0);">我们在低估期间买入是一种正确的应对未来发生变化的方式，</span><span style="text-indent: 2em;font-size: 16px;letter-spacing: 1px;">我们无法预测市场但却可以应对市场，二者并不矛盾，一代代投资大师用他们切身的战绩告诉我们：投资成功跟你是否能预测市场没有半毛关系。所以当我们看不清未来时，并不影响我们成功，怕就怕看不清高低估，我们研究的是市场跟企业的关系，而非市场跟未来的预测关系，很多人把这点搞混淆。</span><span style="font-size: 16px;letter-spacing: 1px;"></span></p><p style="text-indent: 2em;margin-top: 16px;margin-bottom: 16px;line-height: 2em;"><span style="font-size: 16px;letter-spacing: 1px;"></span></p><p style="text-indent: 2em;margin-top: 16px;margin-bottom: 16px;line-height: 2em;"><span style="font-size: 16px;letter-spacing: 1px;">理解了这个底层逻辑，我们又该如何对待手中的持仓呢？这个思路就通透多了，主线只有一个：低估或内在价值附近买进的，在持续下探期间应该予以加仓，至少不应割肉，以免成为永久性损失，若高估位置买入的，在低估位置应加仓，降低成本，反弹回本后逐渐减仓，最终弥补高位买入操作的错误。具体方法论也可参考个人在智库所谈的“</span><span style="font-size: 16px;letter-spacing: 1px;color: rgb(123, 12, 0);">极限估值分仓法</span><span style="font-size: 16px;letter-spacing: 1px;">”，这里不再赘述。</span></p><p style="text-indent: 2em;margin-top: 16px;margin-bottom: 16px;line-height: 2em;"><span style="font-size: 16px;letter-spacing: 1px;">利用极限估值分仓法分批吃进，也是我个人最为享受的一种操作方式<img data-ratio="1" src="https://images.weserv.nl/?url=https://mmbiz.qpic.cn/mmbiz_png/qGHSSMNJuhN9O3rBlnJe7nnP2zWAdY6lYa3LPMak1SS4wnhyEvuVDIX333uExXsYAhzeX0akRNxE1Wibrl6kEEw/640?wx_fmt=png" data-type="png" data-w="20" style="display:inline-block;width:20px;vertical-align:text-bottom;"  />，像曼施坦因是指挥克里米亚大战般过瘾，至于确定手中的股票当下是高低估，这就是公司分析层面的问题了，把这点确定好是操作的重要前提。</span></p><p style="text-align: center;margin-bottom: 0em;"><img class="rich_pages wxw-img" data-galleryid="" data-ratio="0.5404120443740095" data-s="300,640" src="https://images.weserv.nl/?url=https://mmbiz.qpic.cn/mmbiz_png/qGHSSMNJuhN9O3rBlnJe7nnP2zWAdY6lmYEtShAbeRdPS00RSaUMviajv8xXZDf0pa2QoCG5wE06nAXVc0KkkRw/640?wx_fmt=png" data-type="png" data-w="631" style=""  /></p><p style="text-indent: 2em;margin-top: 16px;margin-bottom: 16px;line-height: 2em;"><span style="text-indent: 2em;font-size: 16px;letter-spacing: 1px;">最近跟很多朋友聊天也带给我一个很深刻的感受，跟他们聊完后，萦绕在我内心重复最多的一句话就是：</span><span style="text-indent: 2em;font-size: 16px;letter-spacing: 1px;color: rgb(123, 12, 0);">大部分人在股市最难跨过的还是“波动不是亏损”关</span><span style="text-indent: 2em;font-size: 16px;letter-spacing: 1px;">，可能终生都过不去这道坎，我太了解这种心理了，因为我投资初期也曾被其折磨，很多人在看到自己的账户亏损后，总是会抑制不住的焦虑、忧愁、莫名的悲观，信心莫名的下滑，虽然他们极力的用认知去劝慰自己：波动不是风险，但依然抑制不住身体强大的条件反射，在他们的潜意识中，亏了就是亏了，何必欺骗自己说只是波动性风险呢？未来涨跌谁又能保证呢？总之，他们始终过不了这一关，始终对波动性亏损“耿耿于怀”，同时也对波动性盈利过度看重，他们或许终生都走不出来，这是我见过的一类人。</span><span style="font-size: 16px;letter-spacing: 1px;"></span></p><p style="text-indent: 2em;margin-top: 16px;margin-bottom: 16px;line-height: 2em;"><span style="font-size: 16px;letter-spacing: 1px;text-indent: 2em;">我还见过另外一类人，他们就像开悟一般，真正的从内心深处认同并适应“波动不是风险”，他们知道，</span><span style="font-size: 16px;letter-spacing: 1px;text-indent: 2em;color: rgb(123, 12, 0);">股市的涨跌波动就像人的呼吸一样正常</span><span style="font-size: 16px;letter-spacing: 1px;text-indent: 2em;">，谁也无法阻止股价波动，谁也无法预测波动，既然抱着坚定的信念来到这里，就应该习惯这种波动性“代价”，谁也不能保证一买就涨，他们看的很从容坦然，大胆践行自己的理念，低估买入后即便下跌，他们也知道这只不过是周期波动的小辫子，它们坚定的信仰价值投资和周期思维，坚定等待市场迎来价值回归，他们的眼神反应出他们的坚定与睿智。</span></p><p style="text-align: center;margin-bottom: 0em;"><img class="rich_pages wxw-img" data-galleryid="" data-ratio="0.6494382022471911" data-s="300,640" src="https://images.weserv.nl/?url=https://mmbiz.qpic.cn/mmbiz_png/qGHSSMNJuhN9O3rBlnJe7nnP2zWAdY6lfyV0NaLRib7o66DFJNn1VLmPKTYylZJqiblrwjHLoUHV6851v8Pwexsg/640?wx_fmt=png" data-type="png" data-w="445" style=""  /></p><p style="text-indent: 2em;margin-top: 16px;margin-bottom: 16px;line-height: 2em;"><span style="text-indent: 2em;font-size: 16px;letter-spacing: 1px;">事实上他们之所以这般淡定，主要是因为他们曾以这种方式在股市赚到了太多，</span><span style="text-indent: 2em;font-size: 16px;letter-spacing: 1px;color: rgb(123, 12, 0);">如今也只不过是屡试不爽的前奏曲而已</span><span style="text-indent: 2em;font-size: 16px;letter-spacing: 1px;">。就像每次都能把产品卖出去的企业一样，下一次的进货肯定要提前出钱垫资一样，看着手中的存货不慌，是因为他内心坚信用户的需求，从概率学来讲，存货能不能卖出去谁也不知道，但市场周期以高低估运行的方式却始终不会停歇且不变，这个概率接近100%。</span><span style="font-size: 16px;letter-spacing: 1px;text-indent: 2em;"></span></p><p style="text-indent: 2em;margin-top: 16px;margin-bottom: 16px;line-height: 2em;"><span style="font-size: 16px;letter-spacing: 1px;text-indent: 2em;">所以我深深感知到，那些在熊市嘲笑别人买入后继续下跌的人，他们谁更愚蠢，买入后继续下跌固然听起来没那么好，但试问还有更好的办法吗？</span><span style="font-size: 16px;letter-spacing: 1px;text-indent: 2em;">投资中的大部分经典书籍我都通读了不下几遍，实话说，并没有哪个投资大师告诉我们有更好的办法，告诉我们有更好办法的，他们投资也没有成功，都说不要去接天上掉落的刀子，但谁又有更好的办法呢？</span><span style="font-size: 16px;letter-spacing: 1px;text-indent: 2em;">没有！</span><span style="font-size: 16px;letter-spacing: 1px;text-indent: 2em;">巴芒是这样，所有人都是这样，老巴为何用卖出认沽（锁定下跌后以某价格买入对方股票的义务）的方式去买入可口可乐，执行的就是这样一个理念。</span><span style="font-size: 16px;letter-spacing: 1px;"></span></p><p style="text-indent: 2em;margin-top: 16px;margin-bottom: 16px;line-height: 2em;"><span style="font-size: 16px;letter-spacing: 1px;">个人过去在熊市买入后继续下跌的概率几乎超过100%<img data-ratio="1" src="https://images.weserv.nl/?url=https://mmbiz.qpic.cn/mmbiz_png/qGHSSMNJuhN9O3rBlnJe7nnP2zWAdY6lYa3LPMak1SS4wnhyEvuVDIX333uExXsYAhzeX0akRNxE1Wibrl6kEEw/640?wx_fmt=png" data-type="png" data-w="20" style="display:inline-block;width:20px;vertical-align:text-bottom;"  />，而且很多时候买入后亏损都在20%以上，但每次熊市我还是依然要这样做，因为我知道我不可能买在最低点，即便买在了最低，也无非是</span><span style="font-size: 16px;letter-spacing: 1px;color: rgb(123, 12, 0);">透支运气</span><span style="font-size: 16px;letter-spacing: 1px;">而已，更非是“妙手”我内心是不屑于此的，我不会因为我买在最低点而自豪，相反，</span><span style="font-size: 16px;letter-spacing: 1px;color: rgb(123, 12, 0);">我会因为自己买入后继续下跌而可以敢于继续加仓而欣慰</span><span style="font-size: 16px;letter-spacing: 1px;">，我知道这才是股市常态，这才是“本手”，也正是因为过去的屡试不爽，才让自己的这颗心在下跌之下变得异常兴奋。</span></p><p style="text-indent: 2em;margin-top: 16px;margin-bottom: 16px;line-height: 2em;"><span style="font-size: 16px;letter-spacing: 1px;">那些嘲笑别人买入后继续下跌的人，他们固然没有参与亏损，但就像霍华德马克思所说“</span><span style="font-size: 16px;letter-spacing: 1px;color: rgb(123, 12, 0);">错误是行动的特权</span><span style="font-size: 16px;letter-spacing: 1px;">”，他们失去了参与亏损，也自然错过了上涨，也不要指望他们在持续下跌后抄你的底，事实证明，他们如果是这种人，早就抄底了，又一次的下跌只会“证明”了他们的判断正确，说白了，他们是股市中拥有不同理念的两类人。</span></p><p style="text-indent: 2em;margin-top: 16px;margin-bottom: 16px;line-height: 2em;"><span style="font-size: 16px;letter-spacing: 1px;">经常有人问我，为何我前期买入的股票还会继续下跌呢？为何没有立马反弹呢？譬如厨邦飞鹤阿里，买入后又下跌，加仓后反弹也并不强劲，我要说，他们可能被个人前期的好运气禀赋了，以上说过，这个市场凡是买入就快速盈利的都不是其能力强，而是其运气足够好，懂得了这点，就不会对市场期待太过分，我不知道市场周期何时会反转，我只知道它会反转，而且我知道市场在低估区间跌的最凶猛（加速下跌）的时候，也正是周期反转加快之时，对于何时反转我们预测不了，只是按照原则买入，然后等待百分百概率的周期规律指针转动至盈利，这个时间可能要等待几个月，甚至半年以上都未可知，至今我的备忘录上依然写着这样一段话：</span><span style="font-size: 16px;letter-spacing: 1px;color: rgb(123, 12, 0);">快速获利是为运气，缓慢收利乃为常态。</span></p><p style="text-indent: 2em;margin-top: 16px;margin-bottom: 16px;line-height: 2em;"><span style="font-size: 16px;letter-spacing: 1px;">在这期间我们需要做的，就是跟踪企业的动态价值有没有发生巨大变化，如果企业在此期间内在价值锐减，那曾经的“买入低估”就变成了“买入高估”，这种情况下，再继续强行加仓就南辕北辙。</span></p><p style="text-indent: 2em;margin-top: 16px;margin-bottom: 16px;line-height: 2em;"><span style="font-size: 16px;letter-spacing: 1px;">企业经营本身也是有周期的，强劲增长期，一般市场情绪和估值都会走上行周期波，且斜率通常也很大，一旦遇业绩下滑，在市场情绪催化下，极容易走入周期下行波，周期的另外一个重要特征，就是每次在背离中心均值之时，</span><span style="font-size: 16px;letter-spacing: 1px;color: rgb(123, 12, 0);">都极易走过头，涨跌过头也是周期常态</span><span style="font-size: 16px;letter-spacing: 1px;">，就像经常斗嘴的两口子会经常吵过头一样<img data-ratio="1" src="https://images.weserv.nl/?url=https://mmbiz.qpic.cn/mmbiz_png/qGHSSMNJuhN9O3rBlnJe7nnP2zWAdY6lA42F4QcD7Yk1BicubELnq6zcyXvBlvIHr1ia5a39mW8yIicsEy5seyCcg/640?wx_fmt=png" data-type="png" data-w="20" style="display:inline-block;width:20px;vertical-align:text-bottom;"  />，其本质原因是投资者情绪在峰谷的共振所致，而聪明的投资者利用的就是这一德性。</span></p><p style="text-indent: 2em;margin-top: 16px;margin-bottom: 16px;line-height: 2em;"><span style="font-size: 16px;letter-spacing: 1px;">不管是猪周期下的牧原，还是业绩增速下滑下的厨邦，还是反垄断下的阿里，疫情导致出生人口下滑下的飞鹤等，这些因素使得企业步入下行周期波，等后期一旦这些因素得到改善，也正是上行周期波开启之时，我们重点盯紧和研究的，就是这些因素在未来得到改善的可行性，以及业绩下行空间对安全边际的缓冲空间是否足够。</span></p><p style="text-indent: 2em;margin-top: 16px;margin-bottom: 16px;line-height: 2em;"><span style="font-size: 16px;letter-spacing: 1px;color: rgb(123, 12, 0);">投资也需要辩证</span><span style="font-size: 16px;letter-spacing: 1px;">，</span><span style="font-size: 16px;letter-spacing: 1px;color: rgb(123, 12, 0);">投资中的利空与利好也是福祸相依的</span><span style="font-size: 16px;letter-spacing: 1px;">，企业业绩下滑固然会影响动态价值，此为利空，但股价的过度下跌却暗藏着买入良机，此为利好，周期反转首要的必经之路，就是对下降之后的内在价值的反应，当股价下滑力度超过内在价值下滑力度时，利空就会转换为利好，反之，当股价增长超过内在价值增长之时，企业利好便会转化为投资者之利空，其间哲学意味颇深，这也是投资最有意思之处。</span></p><p style="text-indent: 2em;margin-top: 16px;margin-bottom: 16px;line-height: 2em;"><span style="font-size: 16px;letter-spacing: 1px;">关于是否涨跌过头，有时只需要用简单的定性就可得出答案，拿飞鹤来说，即便未来五年你利润减半，五年之后逐渐恢复，你的内在价值又该下降多少呢？这个用Dcf都可以算出来，结合市场跌幅可以得出答案，当然这只是个人主观看法。</span></p><p style="text-indent: 2em;margin-top: 16px;margin-bottom: 16px;line-height: 2em;"><span style="font-size: 16px;letter-spacing: 1px;">当然我知道，很多人会摒弃“接刀子”理念，去研究右侧交易、趋势交易等，想通过另外一种看似躲避快速下跌风险的方式来“低风险投资”，对此我不禁要说出十年前就记录在日记本上的一句话：</span><span style="font-size: 16px;letter-spacing: 1px;color: rgb(123, 12, 0);">投资中最昂贵的代价、风险和毒药，就是用没有经过得到验证的方法论，陪上自己的本金去试错</span><span style="font-size: 16px;letter-spacing: 1px;">。他们以为自己的方法高人一等，但实则逻辑无法自洽。</span></p><p style="text-indent: 2em;margin-top: 16px;margin-bottom: 16px;line-height: 2em;"><span style="font-size: 16px;letter-spacing: 1px;">我过去也见识过很多投资者，轻信某某理论、某民间股神等，让自己的本金置于赌桌之上，他们从未想过这样一个问题，那就是他所使用的这套方法论得到长期验证了吗？如果有，有代表性实证人物吗？毋庸置疑，从一开始就注定了结局。</span></p><p style="text-indent: 2em;margin-top: 16px;margin-bottom: 16px;line-height: 2em;"><span style="font-size: 16px;letter-spacing: 1px;">既然如此，那为何还有很多人沉迷其中呢？这正是股市的神奇特征，那就是</span><span style="font-size: 16px;letter-spacing: 1px;color: rgb(123, 12, 0);">不管任何方法论，任何风格的投资者，在股市的一定阶段总会奇迹般的“有效”</span><span style="font-size: 16px;letter-spacing: 1px;">，就像即便一只坏掉的钟在一天之间也能走对两次一样，当瞎猫跟死耗子缠绵久了，你就真的认为这只瞎猫有能耐，似乎每天都能抓到耗子，我们在靠错误方法赚钱的当下是很难意识到这点的，即便如此也不容易承认，有些人可能侥幸在某段时期靠某个方法能赚到钱，但把时间拉长再看，收益立马给你拉平，这就是市场先生的伟大之处，很多时候，尤其是赚钱之时，我们很难去反思当下，更不会去怀疑，毕竟他们信奉的是“能赚钱就是王道”的强盗逻辑。</span></p><p style="text-indent: 2em;margin-top: 16px;margin-bottom: 16px;line-height: 2em;"><span style="font-size: 16px;letter-spacing: 1px;">我之前一私募朋友，在熊市期间发行私募，信奉某突破理论和趋势战法，正碰上股市风格转换，笑傲一时，但两年后又因市场风格转换便遭清盘，虽如此，但朋友赚的管理费却够他买几套别墅了，基金圈这样的事太多了，各个风格门派与其说是各领风骚三五年，不如说是运气轮流转，把时间拉长一切就都明了。</span></p><p style="text-indent: 2em;margin-top: 16px;margin-bottom: 16px;line-height: 2em;"><span style="font-size: 16px;letter-spacing: 1px;">这样的事我经历过，所以更不容易被一些短期利益所洗脑，也不会把资金交给基金，因为</span><span style="font-size: 16px;letter-spacing: 1px;color: rgb(123, 12, 0);">利益角度不同</span><span style="font-size: 16px;letter-spacing: 1px;">，</span><span style="font-size: 16px;letter-spacing: 1px;text-indent: 2em;">在市场下跌期，他们关心的是是否清盘，由此在本应该加仓之时却选择割肉，有些基金经理的操作原则，是首先不妨碍收取管理费的前提下再考虑其他，所以基金在顺周期下还好些，它们持有的时间要比普通投资者略长，就像前期的白酒顺周期（2014年以后），基金通常比散户持有时间更长，享受的利润更高，也让投资者在顺周期高位过度神化他们，进而高位加大申购，</span><span style="font-size: 16px;letter-spacing: 1px;text-indent: 2em;color: rgb(123, 12, 0);">聪明的基金管理人会在乐观期关闭申购</span><span style="font-size: 16px;letter-spacing: 1px;text-indent: 2em;">，利益型的管理人则会趁机加大产品供应，把火烧的更旺。</span></p><p style="text-indent: 2em;margin-top: 16px;margin-bottom: 16px;line-height: 2em;"><span style="font-size: 16px;letter-spacing: 1px;">但一旦遇到逆周期，其天生的软肋会大大妨碍价投理念的执行，因为</span><span style="font-size: 16px;letter-spacing: 1px;color: rgb(123, 12, 0);">过度暴跌只会加速清盘，而过度暴跌期间通常恰恰也是加仓的最佳时机</span><span style="font-size: 16px;letter-spacing: 1px;">，而这个软肋也正是最难以调和的矛盾，所以，价投最理想的载体工具是个人投资者。</span></p><p style="text-indent: 2em;margin-top: 16px;margin-bottom: 16px;line-height: 2em;"><span style="font-size: 16px;letter-spacing: 1px;">事实上，逆周期赚钱要比顺周期更容易更确定，它是由低估到高估的周期反转波，而顺周期则是适度乐观到过度乐观，其间的力度极难拿捏，一着不慎便遭遇周期随机性反转，客观来说，在仓位灵活性方面，普通个人投资者比机构投资者更适合逆周期，</span><span style="font-size: 16px;letter-spacing: 1px;color: rgb(123, 12, 0);">顺周期难在克制买入，逆周期难在克制卖出。</span></p><p style="text-indent: 2em;margin-top: 16px;margin-bottom: 16px;line-height: 2em;"><span style="font-size: 16px;letter-spacing: 1px;">我越发观察到，在投资中人性对我们的巨大影响，个人将其称为“</span><span style="font-size: 16px;letter-spacing: 1px;color: rgb(123, 12, 0);">六分认知四分人性</span><span style="font-size: 16px;letter-spacing: 1px;">”，这里的人性，其实就是人的</span><strong><span style="font-size: 16px;letter-spacing: 1px;color: rgb(123, 12, 0);">动物性</span></strong><span style="font-size: 16px;letter-spacing: 1px;">，我发现很多人在关键时刻的一些决策都是受一些特定的行为心理所控制，传统经济学在研究金融经济时，都是假设参与者都为理性人，由此延伸出有效市场理论，但这跟我们所观察到的现实却截然不同，事实上是我们各种各样的心理偏差效应在影响着我们：</span></p><p style="text-indent: 2em;margin-top: 16px;margin-bottom: 16px;line-height: 2em;"><span style="font-size: 16px;letter-spacing: 1px;">有人被套不愿意割肉→处置心理效应</span></p><p style="text-indent: 2em;margin-top: 16px;margin-bottom: 16px;line-height: 2em;"><span style="font-size: 16px;letter-spacing: 1px;">人们会卖出盈利持仓保留亏损股→自豪与懊悔心理效应</span></p><p style="text-indent: 2em;margin-top: 16px;margin-bottom: 16px;line-height: 2em;"><span style="font-size: 16px;letter-spacing: 1px;">为何人们通常会卖出亏损的基金而不愿意卖出亏损的股票持仓→反处置效应</span></p><p style="text-indent: 2em;margin-top: 16px;margin-bottom: 16px;line-height: 2em;"><span style="font-size: 16px;letter-spacing: 1px;">人们在盈利后交易会更频繁→过度自信心理</span></p><p style="text-indent: 2em;margin-top: 16px;margin-bottom: 16px;line-height: 2em;"><span style="font-size: 16px;letter-spacing: 1px;">人们拿赚到的钱更易操作高风险股票→赌资效应</span></p><p style="text-indent: 2em;margin-top: 16px;margin-bottom: 16px;line-height: 2em;"><span style="font-size: 16px;letter-spacing: 1px;">人们会觉得自己持仓的股票会更好→禀赋效应</span></p><p style="text-indent: 2em;margin-top: 16px;margin-bottom: 16px;line-height: 2em;"><span style="font-size: 16px;letter-spacing: 1px;">人们在浅度被套后，会降低自己的盈利预期，更多考虑的是回本→保本出心理效应</span></p><p style="text-indent: 2em;margin-top: 16px;margin-bottom: 16px;line-height: 2em;"><span style="font-size: 16px;letter-spacing: 1px;">人们会将套利账户和中长线账户分开→心理会计效应</span></p><p style="text-indent: 2em;margin-top: 16px;margin-bottom: 16px;line-height: 2em;"><span style="font-size: 16px;letter-spacing: 1px;">为何人们在本金腰斩后更容易买入高风险股票→翻本心理效应</span></p><p style="text-indent: 2em;margin-top: 16px;margin-bottom: 16px;line-height: 2em;"><span style="font-size: 16px;letter-spacing: 1px;">为何人们喜欢将止盈设置在整数位置，比如盈利一倍、到50卖出、赚20%→整数锚点效应</span></p><p style="text-indent: 2em;margin-top: 16px;margin-bottom: 16px;line-height: 2em;"><span style="font-size: 16px;letter-spacing: 1px;">为何一只股票从10涨到50有些人不敢去买，而从10涨到200再跌回60，人们却更乐意去买呢→恐高锚点效应</span></p><p style="text-indent: 2em;margin-top: 16px;margin-bottom: 16px;line-height: 2em;"><span style="font-size: 16px;letter-spacing: 1px;">为何熊市人们更喜欢指责和谩骂→懊悔转移心理效应</span></p><p style="text-indent: 2em;margin-top: 16px;margin-bottom: 16px;line-height: 2em;"><span style="font-size: 16px;letter-spacing: 1px;">为何一旦人们在某个位置买入后盈利，当再次达到该位置，他们再次买入的概率会超过90%→自我激励心理效应</span></p><p style="text-indent: 2em;margin-top: 16px;margin-bottom: 16px;line-height: 2em;"><span style="font-size: 16px;letter-spacing: 1px;">人们为何通常很难买进那些曾经使自己被套的股票→蛇咬心理效应</span></p><p style="text-indent: 2em;margin-top: 16px;margin-bottom: 16px;line-height: 2em;"><span style="font-size: 16px;letter-spacing: 1px;">为何那些无关的事情也会影响我们的投资情绪，进而影响决策</span></p><p style="text-indent: 2em;margin-top: 16px;margin-bottom: 16px;line-height: 2em;"><span style="font-size: 16px;letter-spacing: 1px;">……</span></p><p style="text-indent: 2em;margin-top: 16px;margin-bottom: 16px;line-height: 2em;"><span style="font-size: 16px;letter-spacing: 1px;">这样的心理效应还有很多，我们很多人并未意识到它的存在，而且无形中一直受其控制，很多时候一旦被情绪占领高地，</span><span style="font-size: 16px;letter-spacing: 1px;color: rgb(123, 12, 0);">主宰我们的就不是认知了，而是这根深蒂固的心理效应</span><span style="font-size: 16px;letter-spacing: 1px;">，一个被保本出心理效应禀赋住的投资者，是很难在回本后继续持有到原本的盈利预期的，一个被恐高效应心理控制的人，也很难有勇气在新高买入，即便这距离他的估值相差很远，一个本金腰斩的人，你也很难去控制住他迫切的回本心理-追求高风险，一个被某公司禀赋住的人，也很难听得进别人的反面评价，进而做出忽略、拉黑、弱化利空信息的行为，人们无形之中处处被这根深蒂固了心理效应所牵绊控制。</span></p><p style="text-indent: 2em;margin-top: 16px;margin-bottom: 16px;line-height: 2em;"><span style="font-size: 16px;letter-spacing: 1px;">你去问那个回本出的人，他的买入逻辑有没有变化，他或许会告诉你没有，但他就是卖出了<img class="rich_pages wxw-img" data-ratio="1" src="https://images.weserv.nl/?url=https://mmbiz.qpic.cn/mmbiz_png/qGHSSMNJuhN9O3rBlnJe7nnP2zWAdY6lNQMJJITEKLwaJDH1JKRqesiaHo1Vj6gtPibR21jFKtw8DCeiapZ5E9s9A/640?wx_fmt=png" data-type="png" data-w="20" style="display:inline-block;width:20px;vertical-align:text-bottom;"  />，你能说他缺乏认知吗？由此，六分认知四分人性，缺少了任何一项，这立体的投资就很难立起来。</span></p><p style="text-indent: 2em;margin-top: 16px;margin-bottom: 16px;line-height: 2em;"><span style="font-size: 16px;letter-spacing: 1px;">正因观察到行为心理对我们的这种巨大影响，所以个人在智库增添了</span><span style="font-size: 16px;letter-spacing: 1px;color: rgb(123, 12, 0);">《投资行为心理学系列》</span><span style="font-size: 16px;letter-spacing: 1px;">，共20节，作为逐渐人性层面重要的补充，以投资心理学书籍为主线，结合诺奖得主和行为心理学家对投资者的观察案例，来系统梳理了投资中的那些行为心理效应，我们只有意识觉察到它们的存在，才可以去控制并弱化它，意识到自己是一名非理性人，是投资最重要的开始，也是理解市场周期最基本的一关。</span></p><p style="text-indent: 2em;margin-top: 16px;margin-bottom: 16px;line-height: 2em;"><span style="font-size: 16px;letter-spacing: 1px;">理解了周期思维，也就理解了我们盈利的来源，主要包括两点：</span><span style="font-size: 16px;letter-spacing: 1px;color: rgb(123, 12, 0);">市场情绪+企业盈利</span><span style="font-size: 16px;letter-spacing: 1px;">，也即我们既要赚市场情绪的钱，也要赚企业盈利这份钱，从过度低估到价值回归，这份利润是市场情绪送给我们的，盈利增长匹配合理市盈是企业送给我们的。</span></p><p style="text-indent: 2em;margin-top: 16px;margin-bottom: 16px;line-height: 2em;"><span style="font-size: 16px;letter-spacing: 1px;">当然，很多人就说了，真正的价投不是只赚企业的钱吗？这也是很多价投者得误区，起初我也曾这样想过，</span><span style="font-size: 16px;letter-spacing: 1px;color: rgb(123, 12, 0);">但事实上市场估值修复这份利润也是在价投逻辑中的</span><span style="font-size: 16px;letter-spacing: 1px;">，这也是为何有些企业明明只增长了5倍，我们却可以拿到10倍，这跟周期的大概率特征密不可分，周期不是简单的、标准的、规律的高低估循环，它是市场的随机性情绪反应，通常都会走过头，一个合理估值为15倍pe的企业，市场在周期下行波可能给其跌到5倍，上行波也会涨到30倍，不考虑企业利润增长，这一波就是5倍空间。</span></p><p style="text-indent: 2em;margin-top: 16px;margin-bottom: 16px;line-height: 2em;"><span style="font-size: 16px;letter-spacing: 1px;">最近被朋友拉着听了一场讲座，听到台上的某专家在控诉着股市的黑暗与不公：明明企业利润下降了20%，股价却下滑一半，茅台利润明明增长了几倍，股价却涨了十倍，市场不公平，很多人都是在赚泡沫的钱！都是赌徒！</span></p><p style="text-indent: 2em;margin-top: 16px;margin-bottom: 16px;line-height: 2em;"><span style="font-size: 16px;letter-spacing: 1px;">对此我要说，如果周期的规律就是从低估到高估的永不停歇的循环，那为何不可以赚点泡沫的钱呢？要知道，从历史规律去看，</span><strong><span style="font-size: 16px;letter-spacing: 1px;color: rgb(123, 12, 0);">周期在中心均值到高估之间运行的时间在一半左右，这个时间并不短</span></strong><span style="font-size: 16px;letter-spacing: 1px;">，只是要赚这份泡沫的钱，不可太贪婪，从头吃到尾是不可能的，赚点小高估的泡沫还是大概率可行的，尤其是对于成长股的投资。</span></p><p style="text-indent: 2em;margin-top: 16px;margin-bottom: 16px;line-height: 2em;"><span style="font-size: 16px;letter-spacing: 1px;">捋清了周期的规律，我们就会明白，为何不管是格雷厄姆还是费雪，都建议我们最好持有到小高估，因为他们久经沙场，深知周期的这种规律性特征，所以提出这种建议也就自然不过了。</span></p><p style="text-indent: 2em;margin-top: 16px;margin-bottom: 16px;line-height: 2em;"><span style="font-size: 16px;letter-spacing: 1px;">接下来，</span><span style="font-size: 16px;letter-spacing: 1px;color: rgb(123, 12, 0);">智库会精讲《周期》一书<img class="rich_pages wxw-img" data-ratio="1" src="https://images.weserv.nl/?url=https://mmbiz.qpic.cn/mmbiz_png/qGHSSMNJuhN9O3rBlnJe7nnP2zWAdY6lGxqnBHzFbxyQ4wRicibsctjQOqMicNvTykhwLIRMahu9c1tQY1cEVZmEg/640?wx_fmt=png" data-type="png" data-w="20" style="display:inline-block;width:20px;vertical-align:text-bottom;"  /></span><span style="font-size: 16px;letter-spacing: 1px;">，这也是个人最近三年读到过最好的一本讲述周期的书，老巴每次都会第一时间打开邮箱看他的备忘录，作者本人也是地道的周期实践家，拥有几十年对周期的观察，并以此成为极少数连续几十年操作高息债成功的大师。</span></p><p style="text-indent: 2em;margin-top: 16px;margin-bottom: 16px;line-height: 2em;"><span style="font-size: 16px;letter-spacing: 1px;">一直以来，有很多朋友让我多谈一谈企业层面的东西，客观来说，一家企业几个月的时间里面，经营上又能发生多大变动呢？而在市场下跌期，我们的问题更多是在人性层面，而非企业层面，可以扪心自问，前几个月你的心态好好的，突然之间就因为股价下跌，你对企业的担忧就上来了，这到底是企业的问题呢，还是你心态的问题呢？<img class="rich_pages wxw-img" data-ratio="1" src="https://images.weserv.nl/?url=https://mmbiz.qpic.cn/mmbiz_png/qGHSSMNJuhN9O3rBlnJe7nnP2zWAdY6lBnEtJZ6wJHR3Z9mWJpBqajAgz1vxKHgLSfsz68eBgs5ibhIJvuXAXZw/640?wx_fmt=png" data-type="png" data-w="20" style="display:inline-block;width:20px;vertical-align:text-bottom;"  />有时你的敌人不是认知，而是你的动物性。</span></p><p style="text-indent: 2em;margin-top: 16px;margin-bottom: 16px;line-height: 2em;"><span style="font-size: 16px;letter-spacing: 1px;">事实上，关于企业的很多答案，都在企业之外，只要企业经营没有发生太大变化，无非是市场预期和市场情绪、周期波动那些事，更多不是该不该加仓的问题，而是敢不敢加仓并决心持有的问题，更多人是，信仰在暴跌中崩塌，人性在套牢中激化。</span></p><p style="text-indent: 2em;margin-top: 16px;margin-bottom: 16px;line-height: 2em;"><span style="font-size: 16px;letter-spacing: 1px;">那些在市场下跌之际也跟随市场变悲观的投资者，还远没有踏进价投的大门，这些都是</span><span style="font-size: 16px;letter-spacing: 1px;color: rgb(123, 12, 0);">空有信仰而短于人性</span><span style="font-size: 16px;letter-spacing: 1px;">的披着价投外衣的投机客。</span></p><hr style="border-style: solid;border-width: 1px 0 0;border-color: rgba(0,0,0,0.1);-webkit-transform-origin: 0 0;-webkit-transform: scale(1, 0.5);transform-origin: 0 0;transform: scale(1, 0.5);"  /><p style="text-indent: 2em;margin-top: 16px;margin-bottom: 16px;line-height: 2em;"><span style="font-size: 16px;letter-spacing: 1px;text-indent: 2em;">在此回答一朋友问题：</span><span style="font-size: 16px;letter-spacing: 1px;text-indent: 2em;">在投资中，经济学家的观点要不要听？</span><span style="font-size: 16px;letter-spacing: 1px;"></span></p><p style="text-indent: 2em;margin-top: 16px;margin-bottom: 16px;line-height: 2em;"><span style="font-size: 16px;letter-spacing: 1px;">在国内我观察到这样一个现象，大部分经济学家和财经家对股市的看法，都无外乎“赌场”二字，并明确表示股市没有任何方法可以赚到钱，无非是庄家的游戏，有个知名经济学家居然还说老巴起家靠的都是坐庄，真让人大跌眼镜，这让我越发感受到一点，这个社会沽名钓誉的人简直不要太多，很多人随便买个文凭，挂个所谓职称，书也不读，研究也不做，就开始到处“专家巡演”，害苦了不少容易被洗脑的吃瓜群众。</span></p><p style="text-indent: 2em;margin-top: 16px;margin-bottom: 16px;line-height: 2em;"><span style="font-size: 16px;letter-spacing: 1px;">所以对于投资者，我个人不太建议跟经济学家去探讨投资，个别有参考价值的除外，一个有实盘的跟一个没实盘的去探讨，纯属侮辱自己的智商，</span><span style="font-size: 16px;letter-spacing: 1px;color: rgb(123, 12, 0);">方法论的探讨首先要建立在主线思想的共识之上</span><span style="font-size: 16px;letter-spacing: 1px;">，二者在底层内核就是不同的，当别人内心不认为股市可以赚钱时，就凭这一点，就注定了你们不是一个世界的人。</span></p><p style="text-indent: 2em;margin-top: 16px;margin-bottom: 16px;line-height: 2em;"><span style="font-size: 16px;letter-spacing: 1px;">回复问题二：</span><span style="font-size: 16px;letter-spacing: 1px;color: rgb(123, 12, 0);">如果持有股票很久都没有盈利，是否该继续坚持信念</span></p><p style="text-indent: 2em;margin-top: 16px;margin-bottom: 16px;line-height: 2em;"><span style="font-size: 16px;letter-spacing: 1px;">对此，首先你要确定是否是买在低估，若买在高估，一个周期轮回下来，时间就要拉长很多，等待业绩消化高估值，这是一种类型</span></p><p style="text-indent: 2em;margin-top: 16px;margin-bottom: 16px;line-height: 2em;"><span style="font-size: 16px;letter-spacing: 1px;">其次持有时间有多长，如果持有三年以上，依然没有价值回归，按照格雷厄姆和巴芒的看法，可能就需要反思自己对企业的理解有没有出错，或者说是否已经进入一个自己理解不了的境况，需要判断在此期间，企业价值有无下降，或者业绩增长但估值下滑，三五年的低估，背后是否隐藏着持续的隐忧，或价值回归的催化剂被大幅抑制，回归周期无限期延长，超出了我们投资的格局类型，有时，企业在市场的长期低估比企业本身更难理解，前者是市场层面，后者为企业层面。</span></p><p style="text-indent: 2em;margin-top: 16px;margin-bottom: 16px;line-height: 2em;"><span style="font-size: 16px;letter-spacing: 1px;">无论如何，3-5年是一个重要的时间窗口，逻辑证明不了的东西，时间会帮我们证明，投资总会出错或出现意外的类型，这很正常，</span><span style="font-size: 16px;letter-spacing: 1px;color: rgb(123, 12, 0);">人生有限，也不能不考虑价值回归周期。</span></p><p style="text-indent: 2em;margin-top: 16px;margin-bottom: 16px;line-height: 2em;"><span style="font-size: 16px;letter-spacing: 1px;">回复问题3：如果只是研究三四家企业，通过什么方法可将收益最大化。</span></p><p style="text-indent: 2em;margin-top: 16px;margin-bottom: 16px;line-height: 2em;"><span style="font-size: 16px;letter-spacing: 1px;">答：若只研究并了解三家企业，从风险分散角度来说，可根据理解程度分别布局对应的仓位，并在持有途中进行高低估轮换，减仓中途涨至高估的仓位，加仓至低估股票，这也是林奇经常使用的方法。</span></p><p style="text-indent: 2em;margin-top: 16px;margin-bottom: 16px;line-height: 2em;"><span style="font-size: 16px;letter-spacing: 1px;">第二种方法就是</span><span style="font-size: 16px;letter-spacing: 1px;color: rgb(123, 12, 0);">将低估的利润最大化</span></p><p style="text-indent: 2em;margin-top: 16px;margin-bottom: 16px;line-height: 2em;"><span style="font-size: 16px;letter-spacing: 1px;">简单赘述下，一个内在价值为100亿的企业，跌至90亿买入至价值回归，你能赚11%跌至50亿至回归，能赚100%，是前者的9倍，也即，内在价值跌44%，潜在收益就增加89%，跌至30亿，能赚230%，是其20倍，若跌至10亿，可赚900%，是其81倍，如果将其列为一个数学函数或曲线，会更直观。</span></p><p style="text-indent: 2em;margin-top: 16px;margin-bottom: 16px;line-height: 2em;"><span style="font-size: 16px;letter-spacing: 1px;">就像舍得，你100亿买，到600亿，能赚5倍，而400亿买只能赚50%，可能前者就比你早买一两年，收益上直接上差了10倍，就像我认识的一些朋友，买片仔癀买的早的收益几十倍，买的晚的也就几倍，二者买入的时间也就相差几年时间，直接就差出10倍的收益，这在投资中已经算是相当大的差距了。</span></p><p style="text-indent: 2em;margin-top: 16px;margin-bottom: 16px;line-height: 2em;"><span style="font-size: 16px;letter-spacing: 1px;">啰嗦这点是想说明，在低估区域中，</span><span style="font-size: 16px;letter-spacing: 1px;color: rgb(123, 12, 0);">每次下跌都意味着“杠杆式”的潜在收益增加</span><span style="font-size: 16px;letter-spacing: 1px;">，其威力极大，类似于反向的复利效应，因为内在价值不变的情况下，基数变得更少，如此，我们的安全边际不仅更大，盈利风险更小，而且获利空间更大，确定性更强，相反，如果只是在内在价值附近买入，利润空间基本就在高估泡沫中，安全边际要更小，由于基数变大，能获取的收益率也会便签，</span><span style="font-size: 16px;letter-spacing: 1px;color: rgb(123, 12, 0);">从100亿高估至200亿需要的市场能量要更大，概率比从50亿到100亿要更低</span><span style="font-size: 16px;letter-spacing: 1px;">，低估到回归的逻辑是注定的，而回归之后是否必然走入高估，在概率上的保证要更低一些。</span></p><p style="text-indent: 2em;margin-top: 16px;margin-bottom: 16px;line-height: 2em;"><span style="font-size: 16px;letter-spacing: 1px;">由此，真正的投资高手都懂得利用这种威力，从低估区里去挖取最大化收益，这也是岔开空间去分批加仓的巨大威力所在，如果坚持内在价值不变，那第二次加仓比第一次买入的杠杆效应要更强，这也是很多人所意识不到的一点。</span></p><hr style="border-style: solid;border-width: 1px 0 0;border-color: rgba(0,0,0,0.1);-webkit-transform-origin: 0 0;-webkit-transform: scale(1, 0.5);transform-origin: 0 0;transform: scale(1, 0.5);"  /><p style="text-indent: 2em;margin-top: 16px;margin-bottom: 16px;line-height: 2em;"><span style="font-size: 16px;letter-spacing: 1px;">操作上，没啥大变化，前期加仓了阿里，成本降到100附近。</span></p><p style="text-indent: 2em;margin-top: 16px;margin-bottom: 16px;line-height: 2em;"><span style="font-size: 16px;letter-spacing: 1px;">190亿市值加仓了厨邦，个人主观看法，即便最差情况出现，姚老板出局，也并非多大利空，因为经营层面上，一直都有成熟的分销渠道和管理团队，即便换大股东，对经营影响程度也并没有想象中那么大，姚老板没有高分红，说明其债务危机并没有触及到上市公司。</span></p><p style="text-indent: 2em;margin-top: 16px;margin-bottom: 16px;line-height: 2em;"><span style="font-size: 16px;letter-spacing: 1px;">牧原方面，出栏增加，扩张收紧，现金流得到一定释放，更易度过猪周期底部，市场大部分小猪企早已进入亏损阶段，老林前几天的讲话也体现出对企业当下阶段现金流的重视，继续磨猪周期。</span></p><p style="text-indent: 2em;margin-top: 16px;margin-bottom: 16px;line-height: 2em;"><span style="font-size: 16px;letter-spacing: 1px;">其他未动。</span></p><hr style="border-style: solid;border-width: 1px 0 0;border-color: rgba(0,0,0,0.1);-webkit-transform-origin: 0 0;-webkit-transform: scale(1, 0.5);transform-origin: 0 0;transform: scale(1, 0.5);"  /><p style="text-indent: 2em;margin-top: 16px;margin-bottom: 16px;line-height: 2em;"><span style="font-size: 16px;letter-spacing: 1px;color: rgb(123, 12, 0);">打通底层投资逻辑，打牢系统认知，继续打造投资界的认知本草纲目，一起迭代正确的投资认知。</span></p><p style="text-indent: 2em;margin-top: 16px;margin-bottom: 16px;line-height: 2em;"><img class="rich_pages wxw-img" data-fileid="100005692" data-ratio="0.49277456647398843" data-s="300,640" src="https://images.weserv.nl/?url=https://mmbiz.qpic.cn/mmbiz_png/qGHSSMNJuhPjrkMpicN3YVwB5K4A9WibgDremuehyzSLHOtPuj1RtPuws3hFRh92Hsk0DOwx5LKELcd7K2tic8l3g/640?wx_fmt=png" data-type="png" data-w="692" style="margin: 0px;padding: 0px;outline: 0px;max-width: 100%;box-sizing: border-box !important;overflow-wrap: break-word !important;vertical-align: bottom;height: auto !important;letter-spacing: 0.544px;text-indent: 2em;font-family: -apple-system-font, BlinkMacSystemFont, &quot;Helvetica Neue&quot;, &quot;PingFang SC&quot;, &quot;Hiragino Sans GB&quot;, &quot;Microsoft YaHei UI&quot;, &quot;Microsoft YaHei&quot;, Arial, sans-serif;text-align: center;visibility: visible !important;width: 677px !important;"></p><p style="text-indent: 2em;margin-top: 16px;margin-bottom: 16px;line-height: 2em;"><br  /></p>
+          </div>
+
+          <script type="text/javascript" nonce="1102006763" reportloaderror>
+            var first_sceen__time = (+new Date());
+            if ("" == 1 && document.getElementById('js_content')) {
+              document.getElementById('js_content').addEventListener("selectstart",function(e){ e.preventDefault(); });
+            }
+          </script>
+
+          
+<div id="js_sponsor_ad_area"></div>
+
+
+           
+                          
+              <div class="reward_area tc reward_area_primary reward_area_carry_whisper" id="js_reward_area" style="display:none;">
+                <div class="reward-avatar" style="display: none;" id="js_reward_avatar">
+                  <img role="link" tabindex="0" src="" aria-labelledby="js_reward_author" title="作者" id="js_reward_author_head">
+                </div>
+
+                
+                                <div class="reward-author" aria-hidden="true" style="display: none;" id="js_reward_author">伯庸书院</div>
+                                                <p class="reward_button_wrp">
+                <span id="js_author_reward_qrcode" class="reward_pop_panel">
+                  <img id="js_author_reward_qrcode_img" src="" alt="赞赏二维码">
+                  <strong>微信扫一扫赞赏作者</strong>
+                </span>
+                  <a role="button" class="reward_button weui-btn js_wx_tap_highlight" id='js_reward_link' href="##"><i class="icon_reward"></i><span id="js_reward_link_text">赞赏</span></a>
+                </p>
+
+                
+
+<div id="js_reward_whisper" class="reward_whisper_wrp" style="display: none;">
+  <div class="reward_whisper_word">已喜欢，<a id="js_show_whisper_dialog" href="javascript:;" class="reward_whisper_link">对作者说句悄悄话</a></div>
+</div>
+
+
+<div id="js_reward_whisper_dialog" style="display: none;">
+  <div class="like_comment_primary_wrp editing">
+    <div class="like_comment_primary_inner">
+      <div class="like_comment_primary_hd">
+        <div class="like_comment_primary_hd_side">
+          <button class="like_comment_primary_cancel" id="js_hide_whisper_dialog">
+            取消<i class="weui-icon-close-thin"></i>
+          </button>
+        </div>
+        <h4 class="like_comment_primary_title">发送给作者</h4>
+        <div class="like_comment_primary_hd_side">
+          <button id="js_whisper_send" class="like_comment_primary_btn" disabled="disabled">发送</button>
+        </div>
+      </div>
+      <div class="like_comment_primary_bd">
+        <textarea class="like_comment_textarea weui-textarea" placeholder="说句悄悄话" id="js_whisper_text"></textarea>
+      </div>
+      <span class="like_comment_msg" id="js_whisper_msg" style="visibility: hidden;">最多40字，当前共<span id="js_whisper_current_cnt"></span>字</span>
+    </div>
+  </div>
+  <div class="like_comment_primary_mask" id="js_whisper_dialog_mask"></div>
+</div>
+
+
+                <div id="js_reward_inner" class="reward_area_inner" style="display:none;">
+                  <p class="weui-loadmore weui-loadmore_line reward_user_tips weui-loadmore_default" id="js_reward_total_parent">
+                  <span class="weui-loadmore__tips">
+                    <a aria-labelledby="js_reward_total js_reward_total_text" href="javascript:;" id="js_reward_total" class="js_wx_tap_highlight wx_tap_link"></a>&nbsp;<span id="js_reward_total_text" aria-hidden="true">人赞赏</span>
+                  </span>
+                  </p>
+                  
+                  <div id="js_reward_list" class="reward_user_list" aria-hidden="true"></div>
+                  <div id="js_reward_pagination" class="simple_pagination" aria-hidden="true" style="display: none;">
+                  <button disabled class="btn_sp_prev js_reward_pagination_prev">上一页</button>
+                  <span class="sp_page_num_area">
+                    <a class="sp_page_current js_reward_pagination_curpage" href="javascript:;">1</a>&#47;<span class="sp_page_num js_reward_pagination_totalpage">3</span>
+                  </span>
+                  <button class="btn_sp_next js_reward_pagination_next">下一页</button>
+                  </div>
+                </div>
+              </div>
+                              <div class="reward_qrcode_area reward_area tc" id="js_reward_qrcode" style="display:none;">
+                  <p class="tips_global" aria-hidden="true" id="js_a11y_reward_qr_title">长按二维码向我转账</p>
+                                    <p role="option" aria-labelledby="js_a11y_reward_qr_word js_a11y_comma js_a11y_reward_qr_title js_a11y_reward_qr_money" aria-describedby="js_a11y_reward_qr_tips " class="reward_tips" id="js_a11y_reward_qr_word"></p>
+                  <span class="reward_qrcode_img_wrp"><img alt="赞赏二维码" class="reward_qrcode_img" id="js_reward_qrcode_img"></span>
+                  <p aria-hidden="true" id="js_a11y_reward_qr_tips" class="tips_global">受苹果公司新规定影响，微信 iOS 版的赞赏功能被关闭，可通过二维码转账支持公众号。</p>
+                </div>
+                                              
+                    
+        </div>
+                        <div id="js_tags_preview_toast" class="article-tag__error-tips" style="display: none;">预览时标签不可点</div>
+                
+        
+        <div id="js_album_keep_read" class="appmsg_card_context album_read_card" style="display: none;">
+          <div role="button" class="album_read_hd weui-flex" id="js_album_directory">
+            <div class="album_read_source">收录于合集 <span class="weui-link wx_tap_link js_album_directory__name">#<span id="js_album_keep_read_title"></span></span></div>
+            <span class="weui-btn__word-wrp wx_tap_link js_album_directory__size">&nbsp;<span id="js_album_keep_read_size"></span><span class="weui-hidden_abs">个</span></span>
+          </div>
+          <div class="album_read_bd weui-flex">
+            <span role="button" class="album_read_nav_item album_read_nav_prev weui-flex__item wx_tap_link js_wx_tap_highlight" id="js_album_prev">
+              <span class="album_read_nav_inner">
+                <span class="album_read_nav_btn">上一篇</span>
+                <span class="album_read_nav_title">
+                  <span class="album_read_nav_title_inner" id="js_album_keep_read_pre_title"></span>
+                </span>
+              </span>
+            </span>
+            <span role="button" class="album_read_nav_item album_read_nav_next weui-flex__item wx_tap_link js_wx_tap_highlight" id="js_album_next">
+              <span class="album_read_nav_inner">
+                <span class="album_read_nav_btn">下一篇</span>
+                <span class="album_read_nav_title">
+                  <span class="album_read_nav_title_inner" id="js_album_keep_read_next_title"></span>
+                </span>
+              </span>
+            </span>
+          </div>
+        </div>
+
+        
+
+        
+        <div id="content_bottom_area" class="rich_media_tool_area"></div>
+
+                <div class="rich_media_tool" id="js_sg_bar">
+                  </div>
+              </div>
+    </div>
+
+    <div class="rich_media_area_primary sougou" id="sg_tj" style="display:none"></div>
+
+    
+    <div class="rich_media_area_extra">
+      <div class="rich_media_area_extra_inner">
+        
+        <div class="wx_follow_container" id="js_like_profile_container"></div>
+        
+        <div class="related_container" id="js_related_container"></div>
+        
+        <div id="page_bottom_area"></div>
+      </div>
+    </div>
+
+    
+    <div id="js_pc_qr_code" class="qr_code_pc_outer" style="display:none;">
+      <div class="qr_code_pc_inner">
+        <div class="qr_code_pc">
+          <img id="js_pc_qr_code_img" class="qr_code_pc_img">
+          <p>微信扫一扫<br>关注该公众号</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+
+<div class="comment_primary_emotion_panel_wrp" id="js_emotion_panel_pc" style="display: none">
+  <div class="comment_primary_emotion_panel">
+    <ul class="comment_primary_emotion_list_pc" id="js_emotion_list_pc">
+    </ul>
+  </div>
+</div>
+
+
+<div class="weui-dialog__wrp" id="js_alert_panel" style="display:none;">
+  <div class="weui-mask"></div>
+  <div class="weui-dialog">
+    <div class="weui-dialog__bd" id="js_alert_content"></div>
+    <div class="weui-dialog__ft">
+      <a href="javascript:;" class="weui-dialog__btn weui-dialog__btn_default" id="js_alert_confirm">知道了</a>
+    </div>
+  </div>
+</div>
+
+
+<script type="text/javascript" nonce="1102006763" reportloaderror>
+  window.img_popup = 1; // 全量小程序弹窗
+</script>
+
+
+<div id="js_pc_weapp_code" class="weui-desktop-popover weui-desktop-popover_pos-up-center weui-desktop-popover_img-text" style="display: none;">
+  <div class="weui-desktop-popover__content">
+      <div class="weui-desktop-popover__desc">
+          <img id="js_pc_weapp_code_img">
+          微信扫一扫<br>使用小程序<span id="js_pc_weapp_code_des"></span>
+      </div>
+  </div>
+</div>
+<div id="js_minipro_dialog" role="dialog" aria-modal="true" tabindex="0" aria-labelledby="js_minipro_dialog_head" style="display:none;">
+  <div class="weui-mask"></div>
+  <div class="weui-dialog weui-dialog_link">
+      <div class="weui-dialog__hd">
+          <strong class="weui-dialog__title" id="js_minipro_dialog_head" tabindex="0"></strong>
+      </div>
+      <div class="weui-dialog__bd" id="js_minipro_dialog_body"></div>
+      
+      <div class="weui-dialog__ft">
+          <a role="button" id="js_minipro_dialog_cancel" href="javascript:void(0);" class="weui-dialog__btn weui-dialog__btn_default">取消</a>
+          <a role="button" id="js_minipro_dialog_ok" href="javascript:void(0);" class="weui-dialog__btn weui-dialog__btn_primary">允许</a>
+      </div>
+  </div>
+</div>
+<div id="js_link_dialog" role="dialog" aria-modal="true" tabindex="0" aria-labelledby="js_link_dialog_body" style="display:none;">
+  <div class="weui-mask"></div>
+  <div class="weui-dialog weui-dialog_link">
+    <div class="weui-dialog__hd">
+      <strong class="weui-dialog__title" id="js_link_dialog_head" tabindex="0"></strong>
+    </div>
+    <div class="weui-dialog__bd" id="js_link_dialog_body" tabindex="0"></div>
+    
+    <div class="weui-dialog__ft">
+      <a role="button" id="js_link_dialog_cancel" href="javascript:void(0);" class="weui-dialog__btn weui-dialog__btn_default">取消</a>
+      <a role="button" id="js_link_dialog_ok" href="javascript:void(0);" class="weui-dialog__btn weui-dialog__btn_primary">允许</a>
+    </div>
+  </div>
+</div>
+
+
+
+    <script type="text/javascript" nonce="1102006763" reportloaderror>
+window.logs.pagetime.page_begin = Date.now();
+</script>
+    <script type="text/javascript" nonce="1102006763" reportloaderror>
+var __DEBUGINFO = {
+  debug_js: "//res.wx.qq.com/mmbizwap/zh_CN/htmledition/js/biz_wap/debug/console5e7896.js",
+  safe_js: "//res.wx.qq.com/mmbizwap/zh_CN/htmledition/js/biz_wap/safe/moonsafe5e7896.js",
+  res_list: []
+};
+</script>
+
+<script type="text/javascript" nonce="1102006763" reportloaderror>
+(function () {
+  var totalCount = 0,
+    finishCount = 0;
+
+  function _loadVConsolePlugin() {
+    window.vConsole = new window.VConsole();
+    while (window.vConsolePlugins.length > 0) {
+      var p = window.vConsolePlugins.shift();
+      window.vConsole.addPlugin(p);
+    }
+    // 视频落地页h5有时候不会触发onload事件，导致vConsole无法渲染，这里手动强制渲染vConsole @baakqiu
+    if (!window.vConsole.isInited) {
+      window.vConsole._render();
+      window.vConsole._mockTap();
+      window.vConsole._bindEvent();
+      window.vConsole._autoRun();
+    }
+  }
+
+  function _addVConsole(uri, cb) {
+    totalCount++;
+    var node = document.createElement('SCRIPT');
+    node.type = 'text/javascript';
+    node.src = uri;
+    node.setAttribute('nonce', '1102006763');
+    if (cb) {
+      node.onload = cb;
+    }
+    document.getElementsByTagName('head')[0].appendChild(node);
+  }
+  if (
+    (document.cookie && document.cookie.indexOf('vconsole_open=1') > -1)
+    || location.href.indexOf('vconsole=1') > -1
+  ) {
+    window.vConsolePlugins = [];
+    _addVConsole('//res.wx.qq.com/mmbizwap/zh_CN/htmledition/js/vconsole/3.2.2/vconsole.min5e7895.js', function () {
+      // _addVConsole('plugin/vconsole-sources/1.0.1/vconsole-sources.min.js');
+      _addVConsole('//res.wx.qq.com/mmbizwap/zh_CN/htmledition/js/vconsole/plugin/vconsole-mpopt/1.0.1/vconsole-mpopt5e7895.js', _loadVConsolePlugin);
+    });
+  }
+
+  // // 广告iframe预加载
+  try {
+    var adIframeUrl = localStorage.getItem('__WXLS_ad_iframe_url');
+    if (window === top) {
+      if (adIframeUrl) {
+        if (navigator.userAgent.indexOf('iPhone') > -1) {
+          var img = new Image();
+          img.src = adIframeUrl;
+        } else {
+          var link = document.createElement('link');
+          link.rel = 'prefetch';
+          link.href = adIframeUrl;
+          document.getElementsByTagName('head')[0].appendChild(link);
+        }
+      }
+    }
+  } catch (err) {
+
+  }
+
+})();
+</script>
+    
+    <script type="text/javascript" nonce="1102006763" reportloaderror>var __INLINE_SCRIPT__=function(){"use strict";var e=function(e,n){if(e.indexOf("——")>-1){e=e.replace(/——/g,'<span style="letter-spacing:normal">——</span>')}n&&(n.innerHTML=e)};if(!window.__second_open__){e("以周期思维看待当下行情，不必悲观",document.getElementById("activity-name")),window.__setTitle=e}return e}();</script><script type="text/javascript" nonce="1102006763" reportloaderror>var __INLINE_SCRIPT__=function(){"use strict";var e=function(e,t,n,i){var _=new Date(1e3*(1*t)),o=function(e){return"0".concat(e).slice(-2)},r=_.getFullYear()+"-"+o(_.getMonth()+1)+"-"+o(_.getDate())+" "+o(_.getHours())+":"+o(_.getMinutes());i&&(i.innerText=r)};if(!window.__second_open__){e(0,"1654662151",0,document.getElementById("publish_time")),window.__setPubTime=e}return e}();</script>
+
+<script type="text/javascript" nonce="1102006763" reportloaderror>
+//兼容 IE
+if (!window.console) window.console = { log: function() {} };
+// 图片占位 @ekili
+if (typeof getComputedStyle == 'undefined') {
+  if (document.body.currentStyle) {
+    window.getComputedStyle = function(el) {
+      return el.currentStyle;
+    }
+  } else {
+    window.getComputedStyle = {};
+  }
+}
+// 图片和视频预加载逻辑，记得H5和秒开要对齐逻辑
+(function(){
+  window.__zoom = 1;
+
+  var ua = navigator.userAgent.toLowerCase();
+  var re = new RegExp("msie ([0-9]+[\.0-9]*)");
+  var version;
+  if (re.exec(ua) != null) {
+    version = parseInt(RegExp.$1);
+  }
+  var isIE = false;
+  if (typeof version != 'undefined' && version >= 6 && version <= 9) {
+    isIE = true;
+  }
+  var bodyWidth = '' * 1;
+  if (bodyWidth) {
+    var styles = getComputedStyle(document.getElementById('page-content'));
+    bodyWidth - parseFloat(styles.paddingLeft) - parseFloat(styles.paddingRight);
+  }
+  var getMaxWith = function () {
+    var container = document.getElementById('img-content');
+    var max_width = container.offsetWidth;
+    !max_width && bodyWidth && (max_width = bodyWidth);
+    var container_padding = 0;
+    var container_style = getComputedStyle(container);
+    container_padding = parseFloat(container_style.paddingLeft) + parseFloat(container_style.paddingRight);
+    max_width -= container_padding;
+    if (!max_width) {
+      max_width = window.innerWidth - 30;      //防止offsetTop不可用，30为padding
+    }
+    return max_width;
+  };
+  var getParentWidth = function (dom) {
+    var parent_width = 0;
+    var parent = dom.parentNode;
+    var outerWidth = 0;
+    while (true) {
+      if (!parent || parent.nodeType != 1) break;
+      var parent_style = getComputedStyle(parent);
+      if (!parent_style) break;
+      parent_width = parent.clientWidth - parseFloat(parent_style.paddingLeft) - parseFloat(parent_style.paddingRight) - outerWidth;
+      if (parent_width > 0) break;
+      outerWidth += parseFloat(parent_style.paddingLeft) + parseFloat(parent_style.paddingRight) + parseFloat(parent_style.marginLeft) + parseFloat(parent_style.marginRight) + parseFloat(parent_style.borderLeftWidth) + parseFloat(parent_style.borderRightWidth);
+      parent = parent.parentNode;
+    }
+    return parent_width;
+  }
+  var getOuterW = function (dom) {
+    var style = getComputedStyle(dom),
+      w = 0;
+    if (!!style) {
+      w = parseFloat(style.paddingLeft) + parseFloat(style.paddingRight) + parseFloat(style.borderLeftWidth) + parseFloat(style.borderRightWidth);
+    }
+    return w;
+  };
+  var getOuterH = function (dom) {
+    var style = getComputedStyle(dom),
+      h = 0;
+    if (!!style) {
+      h = parseFloat(style.paddingTop) + parseFloat(style.paddingBottom) + parseFloat(style.borderTopWidth) + parseFloat(style.borderBottomWidth);
+    }
+    return h;
+  };
+  var insertAfter = function (dom, afterDom) {
+    var _p = afterDom.parentNode;
+    if (!_p) {
+      return;
+    }
+    if (_p.lastChild === afterDom) {
+      _p.appendChild(dom);
+    } else {
+      _p.insertBefore(dom, afterDom.nextSibling);
+    }
+  };
+  var getQuery = function (name, url) {
+    //参数：变量名，url为空则表从当前页面的url中取
+    var u = arguments[1] || window.location.search,
+      reg = new RegExp("(^|&)" + name + "=([^&]*)(&|$)"),
+      r = u.substr(u.indexOf("\?") + 1).match(reg);
+    return r != null ? r[2] : "";
+  };
+
+  /**
+    * 设置图片size
+    *
+    * @param {HTMLElement} item             图片元素
+    * @param {number} widthNum         宽度数值
+    * @param {string} widthUnit        宽度单位
+    * @param {number} ratio            宽高比
+    * @param {boolean} breakParentWidth 是否突破父元素宽度(父元素是否被撑大)
+    */
+  function setImgSize(item, widthNum, widthUnit, ratio, breakParentWidth) {
+    setTimeout(function () {
+      var img_padding_border = getOuterW(item) || 0;
+      var img_padding_border_top_bottom = getOuterH(item) || 0;
+
+      var isAccessibilityKey = 'isMpUserAccessibility';
+      var isAccessMode = window.localStorage.getItem(isAccessibilityKey);
+
+      // 如果设置的宽度超过了父元素最大宽度，则取父元素宽度
+      if (widthNum > getParentWidth(item) && !breakParentWidth) {
+        widthNum = getParentWidth(item);
+      }
+
+      height = (widthNum - img_padding_border) * ratio + img_padding_border_top_bottom;
+
+      if (isIE || '0' === '1' || '' === '1' || isAccessMode === '1') { // 判一下是不是漫画原创，如果是，不走懒加载
+        var url = item.getAttribute('data-src');
+        item.src = url;
+
+        // 不走懒加载但是需要跟懒加载一样去除占位高度
+        item.style.height = 'auto';
+      } else {
+        if (parseFloat(widthNum, 10) > 40 && height > 40 && breakParentWidth) {
+          item.className += ' img_loading';
+        }
+        item.src = "data:image/gif;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQImWNgYGBgAAAABQABh6FO1AAAAABJRU5ErkJggg==";
+        widthNum !== 'auto' && (item.style.cssText += ";width: " + widthNum + widthUnit + " !important;");
+        widthNum !== 'auto' && (item.style.cssText += ";height: " + height + widthUnit + " !important;");
+      }
+    }, 10);
+  }
+  // 图片和视频预加载逻辑，记得H5和秒开要对齐逻辑
+  (function () {
+    var images = document.getElementsByTagName('img');
+    var length = images.length;
+    var max_width = getMaxWith();
+    for (var i = 0; i < length; ++i) {
+      if (window.__second_open__ && images[i].getAttribute('__sec_open_place_holder__')) {
+        continue;
+      }
+      var imageItem = images[i];
+      var src_ = imageItem.getAttribute('data-src');
+      var realSrc = imageItem.getAttribute('src');
+      if (!src_ || realSrc) continue;
+      // 图片原始宽度
+      var originWidth = imageItem.getAttribute('data-w');
+      var ratio_ = 1 * imageItem.getAttribute('data-ratio');
+
+      var height = 100;
+      if (ratio_ && ratio_ > 0) {
+        var parent_width = getParentWidth(imageItem) || max_width;
+        var initWidth = imageItem.style.width || imageItem.getAttribute('width') || originWidth || parent_width;
+        initWidth = parseFloat(initWidth, 10) > max_width ? max_width : initWidth;
+        // 有attribute或style中的width，写入_width属性，在图片加载完成时写入img标签
+        if (initWidth) {
+          imageItem.setAttribute('_width', !isNaN(initWidth * 1) ? initWidth + 'px' : initWidth);
+        }
+        // 使用百分比，则计算出像素宽度
+        if (typeof initWidth === 'string' && initWidth.indexOf('%') !== -1) {
+          initWidth = parseFloat(initWidth.replace('%', ''), 10) / 100 * parent_width;
+        }
+        // 使用auto，就是原始宽度
+        if (initWidth === 'auto') {
+          initWidth = originWidth;
+        }
+
+        var widthNum;
+        var widthUnit;
+        if (initWidth === 'auto') {
+          widthNum = 'auto';
+        } else {
+          var res = /^(\d+(?:\.\d+)?)([a-zA-Z%]+)?$/.exec(initWidth);
+          widthNum = res && res.length >= 2 ? res[1] : 0;
+          widthUnit = res && res.length >= 3 && res[2] ? res[2] : 'px';
+        }
+
+        // 试探一下parent宽度在设置了图片的大小之后是否会变化
+        setImgSize(imageItem, widthNum, widthUnit, ratio_, true);
+        // 真正设置宽高
+        (function (item, widthNumber, unit, ratio) {
+          setTimeout(function () {
+            setImgSize(item, widthNumber, unit, ratio, false);
+          });
+        })(imageItem, widthNum, widthUnit, ratio_);
+      } else {
+        imageItem.style.cssText += ";visibility: hidden !important;";
+      }
+  }
+  })();
+  window.__videoDefaultRatio = 16 / 9;//默认值是16/9
+  window.__getVideoWh = function (dom) {
+    var max_width = getMaxWith(),
+      width = max_width,
+      ratio_ = dom.getAttribute('data-ratio') * 1,//mark16/9
+      arr = [4 / 3, 16 / 9],
+      ret = arr[0],
+      abs = Math.abs(ret - ratio_);
+    if (!ratio_) { // 没有比例
+      if (dom.getAttribute("data-mpvid")) { // MP视频
+        ratio_ = 16 / 9;
+      } else { // 非MP视频，需要兼容历史图文
+        ratio_ = 4 / 3;
+      }
+    } else { // 有比例，则判断更接近4/3还是更接近16/9
+      for (var j = 1, jl = arr.length; j < jl; j++) {
+        var _abs = Math.abs(arr[j] - ratio_);
+        if (_abs < abs) {
+          abs = _abs;
+          ret = arr[j];
+        }
+      }
+      ratio_ = ret;
+    }
+
+    var parent_width = getParentWidth(dom) || max_width,
+      width = width > parent_width ? parent_width : width,
+      outerW = getOuterW(dom) || 0,
+      outerH = getOuterH(dom) || 0,
+      videoW = width - outerW,
+      videoH = videoW / ratio_,
+      speedDotH = 12, // 播放器新样式的进度条在最下面，为了避免遮住拖动的点点，需要额外设置高一些
+      height = videoH + outerH + speedDotH;
+
+    return { w: Math.ceil(width), h: Math.ceil(height), vh: videoH, vw: videoW, ratio: ratio_, sdh: speedDotH };
+  };
+
+  // 图片和视频预加载逻辑，记得H5和秒开要对齐逻辑
+  (function () {
+    var iframe = document.getElementsByTagName('iframe');
+    for (var i = 0, il = iframe.length; i < il; i++) {
+      if (window.__second_open__ && iframe[i].getAttribute('__sec_open_place_holder__')) {
+        continue;
+      }
+      var a = iframe[i];
+      var src_ = a.getAttribute('src') || a.getAttribute('data-src') || "";
+
+      /* if (!/^http(s)*\:\/\/v\.qq\.com\/iframe\/(preview|player)\.html\?/.test(src_)
+        && !/^http(s)*\:\/\/mp\.weixin\.qq\.com\/mp\/readtemplate\?t=pages\/video_player_tmpl/.test(src_)
+      ) {
+        continue;
+      } */
+      var vid = getQuery("vid", src_) || a.getAttribute('data-mpvid');
+      if (!vid) {
+        continue;
+      }
+      vid = vid.replace(/^[\s\uFEFF\xA0]+|[\s\uFEFF\xA0]+$/g, "");//清除前后空格
+      a.removeAttribute('src');
+      a.style.display = "none";
+      var obj = window.__getVideoWh(a),
+        videoPlaceHolderSpan = document.createElement('span'),
+        videoPlayerIconSpan = document.createElement('span'),
+        mydiv = document.createElement('img');
+
+      videoPlaceHolderSpan.className = "js_img_loading db";
+      videoPlaceHolderSpan.setAttribute("data-vid", vid);
+      // videoPlaceHolderSpan.style.display = 'block';
+
+      videoPlayerIconSpan.className = 'wx_video_context db'; // 预加载的视频封面图占位
+      videoPlayerIconSpan.style.display = 'none';
+      videoPlayerIconSpan.innerHTML = '<span class="wx_video_thumb_primary"></span><button class="wx_video_play_btn">播放</button><span class="wx_video_mask"></span>'; // 曝光后设置这里img的src
+
+      mydiv.className = "img_loading";
+
+      mydiv.src = "data:image/gif;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQImWNgYGBgAAAABQABh6FO1AAAAABJRU5ErkJggg==";
+      // mydiv.style.cssText += ';height:100%;width:100%;';
+      // mydiv.setAttribute("data-vid",vid);
+      videoPlaceHolderSpan.style.cssText = "width: " + obj.w + "px !important;";
+      mydiv.style.cssText += ";width: " + obj.w + "px";
+      videoPlaceHolderSpan.appendChild(videoPlayerIconSpan);
+      videoPlaceHolderSpan.appendChild(mydiv);
+
+      insertAfter(videoPlaceHolderSpan, a); // 在视频后面插入占位
+
+      /* var parentNode = a.parentNode;
+      var copyIframe = a;
+      var index = i; */
+
+      // 由于视频需要加一个转载的来源，所以这里需要提前设置高度
+      function ajax(obj) {
+        var url = obj.url;
+        var xhr = new XMLHttpRequest();
+
+        var data = null;
+        if (typeof obj.data == "object") {
+          var d = obj.data;
+          data = [];
+          for (var k in d) {
+            if (d.hasOwnProperty(k)) {
+              data.push(k + "=" + encodeURIComponent(d[k]));
+            }
+          }
+          data = data.join("&");
+        } else {
+          data = typeof obj.data == 'string' ? obj.data : null;
+        }
+
+        xhr.open('POST', url, true);
+        xhr.onreadystatechange = function () {
+          if (xhr.readyState == 4) {
+            if (xhr.status >= 200 && xhr.status < 400) {
+              obj.success && obj.success(xhr.responseText);
+            } else {
+              obj.error && obj.error(xhr);
+            }
+            obj.complete && obj.complete();
+            obj.complete = null;
+          }
+        };
+        xhr.setRequestHeader("Content-Type", "application/x-www-form-urlencoded; charset=UTF-8");
+        xhr.setRequestHeader("X-Requested-With", "XMLHttpRequest");
+        xhr.send(data);
+      }
+
+      var mid = "" || "" || "2247489568";
+      var biz = "" || "MzUzNDg3OTE2Mw==";
+      var sessionid = "" || "svr_b3119c9d5e7";
+      var idx = "";
+
+      (function sendReq(parentNode, copyIframe, index, vid) {
+        ajax({
+          url: '/mp/videoplayer?vid=' + vid + '&mid=' + mid + '&idx=1&__biz=' + biz + '&sessionid=' + sessionid + '&f=json',
+          type: "GET",
+          dataType: 'json',
+          success: function (json) {
+            var ret = JSON.parse(json || '{}');
+            var ori = ret.ori_status;
+            var hit_biz_headimg = ret.hit_biz_headimg + '/64';
+            var hit_nickname = ret.hit_nickname;
+            var hit_username = ret.hit_username;
+            var sourceBiz = ret.source_encode_biz;
+
+            var selfUserName = "gh_48235cd3df43";
+
+            if (ori === 2 && selfUserName !== hit_username) {
+              var videoBar = document.createElement('div');
+              var videoBarHtml = '<div class="wx-edui-video_source_link js_wx_tap_highlight wx_tap_card" id="' + (hit_username + index) + '" data-hit-username="' + hit_username + '" data-hit-biz="' + sourceBiz + '">';
+              videoBarHtml += '<div class="wx-edui-video_source_word">以下视频来源于</div>';
+              videoBarHtml += '<div class="wx-edui-video_account_info">';
+              videoBarHtml += '<div class="wx-edui-video_account_avatar" id="' + (hit_biz_headimg + index) + '" src="https://images.weserv.nl/?url=' + hit_biz_headimg + '"></div>';
+              videoBarHtml += '<div class="wx-edui-video_account_name">' + hit_nickname + '</div>';
+              videoBarHtml += '<i class="wx-edui-video_account_arrow"></i>';
+              videoBarHtml += '</div>';
+              videoBarHtml += '<div class="wx-edui-video_source_link__layer_mask"></div>';
+              videoBarHtml += '</div>';
+              videoBar.innerHTML = videoBarHtml;
+              var spanContainer = document.getElementById('js_mp_video_container_' + index);
+              if (spanContainer) {
+                spanContainer.parentNode.insertBefore(videoBar, spanContainer);
+              } else if (parentNode.contains && parentNode.contains(copyIframe)) {
+                parentNode.insertBefore(videoBar, copyIframe);
+              } else {
+                parentNode.insertBefore(videoBar, parentNode.firstElementChild);
+              }
+              var avatorEle = document.getElementById(hit_biz_headimg + index);
+              var avatorSrc = avatorEle.dataset.src;
+              console.log('avatorSrc' + avatorSrc);
+              if (ret.hit_biz_headimg) {
+                avatorEle.style.backgroundImage = 'url(' + avatorSrc + ')';
+              }
+            }
+          },
+          error: function (xhr) {
+          }
+        });
+      })(a.parentNode, a, i, vid);
+
+      a.style.cssText += ";width: " + obj.w + "px !important;";
+      a.setAttribute("width", obj.w);
+      if (window.__zoom != 1) {
+        a.style.display = "block";
+        videoPlaceHolderSpan.style.display = "none";
+        a.setAttribute("_ratio", obj.ratio);
+        a.setAttribute("_vid", vid);
+      } else {
+        videoPlaceHolderSpan.style.cssText += "height: " + (obj.h - obj.sdh) + "px !important;margin-bottom: " + obj.sdh + "px !important;";
+        mydiv.style.cssText += "height: " + (obj.h - obj.sdh) + "px !important;";
+        a.style.cssText += "height: " + obj.h + "px !important;";
+        a.setAttribute("height", obj.h);
+      }
+      a.setAttribute("data-vh", obj.vh);
+      a.setAttribute("data-vw", obj.vw);
+      if (a.getAttribute("data-mpvid")) {
+        a.setAttribute("data-src", location.protocol + "//mp.weixin.qq.com/mp/readtemplate?t=pages/video_player_tmpl&auto=0&vid=" + vid);
+      } else {
+        a.setAttribute("data-src", location.protocol + "//v.qq.com/iframe/player.html?vid=" + vid + "&width=" + obj.vw + "&height=" + obj.vh + "&auto=0");
+      }
+    }
+  })();
+
+  (function () {
+    if (window.__zoom != 1) {
+      if (!window.__second_open__) {
+        document.getElementById('page-content').style.zoom = window.__zoom;
+        var a = document.getElementById('activity-name');
+        var b = document.getElementById('meta_content');
+        if (!!a) {
+          a.style.zoom = 1 / window.__zoom;
+        }
+        if (!!b) {
+          b.style.zoom = 1 / window.__zoom;
+        }
+      }
+      var images = document.getElementsByTagName('img');
+      for (var i = 0, il = images.length; i < il; i++) {
+        if (window.__second_open__ && images[i].getAttribute('__sec_open_place_holder__')) {
+          continue;
+        }
+        images[i].style.zoom = 1 / window.__zoom;
+      }
+      var iframe = document.getElementsByTagName('iframe');
+      for (var i = 0, il = iframe.length; i < il; i++) {
+        if (window.__second_open__ && iframe[i].getAttribute('__sec_open_place_holder__')) {
+          continue;
+        }
+        var a = iframe[i];
+        a.style.zoom = 1 / window.__zoom;
+        var src_ = a.getAttribute('data-src') || "";
+        if (!/^http(s)*\:\/\/v\.qq\.com\/iframe\/(preview|player)\.html\?/.test(src_)
+          && !/^http(s)*\:\/\/mp\.weixin\.qq\.com\/mp\/readtemplate\?t=pages\/video_player_tmpl/.test(src_)
+        ) {
+          continue;
+        }
+        var ratio = a.getAttribute("_ratio");
+        var vid = a.getAttribute("_vid");
+        a.removeAttribute("_ratio");
+        a.removeAttribute("_vid");
+        var vw = a.offsetWidth - (getOuterW(a) || 0);
+        var vh = vw / ratio;
+        var h = vh + (getOuterH(a) || 0)
+        a.style.cssText += "height: " + h + "px !important;"
+        a.setAttribute("height", h);
+        if (/^http(s)*\:\/\/v\.qq\.com\/iframe\/(preview|player)\.html\?/.test(src_)) {
+          a.setAttribute("data-src", location.protocol + "//v.qq.com/iframe/player.html?vid=" + vid + "&width=" + vw + "&height=" + vh + "&auto=0");
+        }
+        a.style.display = "none";
+        var parent = a.parentNode;
+        if (!parent) {
+          continue;
+        }
+        for (var j = 0, jl = parent.children.length; j < jl; j++) {
+          var child = parent.children[j];
+          if (child.className.indexOf("img_loading") >= 0 && child.getAttribute("data-vid") == vid) {
+            child.style.cssText += "height: " + h + "px !important;";
+            child.style.display = "";
+          }
+        }
+      }
+    }
+  })();
+})();
+</script><script type="text/javascript" nonce="1102006763" reportloaderror>!function(){"use strict";var t={defaultContentTpl:'<span class="js_img_loading db" style="width:#width#px !important;height:#height#px !important;text-indent: 0"><img style="width:#width#px !important;height:#height#px !important;border-radius:#borderRadius#px;" class="img_loading" src="data:image/gif;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQImWNgYGBgAAAABQABh6FO1AAAAABJRU5ErkJggg=="></span>',config:[{querySelector:"redpacketcover",genId:function(){var t=arguments.length>0&&void 0!==arguments[0]?arguments[0]:{};return decodeURIComponent(t.node.getAttribute("data-coveruri")||"")},calW:function(){var t=arguments.length>0&&void 0!==arguments[0]?arguments[0]:{};return.7854*t.parentWidth},calH:function(){var t=arguments.length>0&&void 0!==arguments[0]?arguments[0]:{};return this.calW({parentWidth:t.parentWidth})/.73346+27+37},replaceContentCssText:"",appendContentCssText:"display: inline-block;position: relative;",outerContainerLeft:'<section style="display:block;font-size:0;text-align:center;margin:16px 0;">',outerContainerRight:"</section>"},{querySelector:"qqmusic",genId:function(){var t=arguments.length>0&&void 0!==arguments[0]?arguments[0]:{};return(t.node.getAttribute("musicid")||"").replace(/^\s/,"").replace(/\s$/,"")+"_"+t.index},calW:function(){var t=arguments.length>0&&void 0!==arguments[0]?arguments[0]:{};return 1*t.parentWidth},calH:function(){return 88},replaceContentCssText:"",appendContentCssText:"margin:16px 0;diplay:block;",outerContainerLeft:"",outerContainerRight:""},{querySelector:"mpvoice",genId:function(){var t=arguments.length>0&&void 0!==arguments[0]?arguments[0]:{},e=decodeURIComponent(t.node.getAttribute("voice_encode_fileid")||"").replace(/^\s/,"").replace(/\s$/,"");return e+"_"+t.index},calW:function(){var t=arguments.length>0&&void 0!==arguments[0]?arguments[0]:{};return 1*t.parentWidth},calH:function(){return 122},replaceContentCssText:"",appendContentCssText:"margin:16px 0;diplay:block;",outerContainerLeft:"",outerContainerRight:""},{querySelector:"mppoi",genId:function(){var t=arguments.length>0&&void 0!==arguments[0]?arguments[0]:{};return t.node.getAttribute("data-id")||""},calW:function(){var t=arguments.length>0&&void 0!==arguments[0]?arguments[0]:{};return 1*t.parentWidth},calH:function(){return 219},replaceContentCssText:"",appendContentCssText:"margin:16px 0;diplay:block;",outerContainerLeft:"",outerContainerRight:""},{querySelector:"mpsearch",genId:function(){return decodeURIComponent("mpsearch")},calW:function(){var t=arguments.length>0&&void 0!==arguments[0]?arguments[0]:{};return 1*t.parentWidth},calH:function(){return 100},replaceContentCssText:"",appendContentCssText:"margin:16px 0;diplay:block;",outerContainerLeft:"",outerContainerRight:""},{querySelector:"mpvideosnap",genId:function(){var t=arguments.length>0&&void 0!==arguments[0]?arguments[0]:{},e=t.node.getAttribute("data-type")||"video";return"live"===e?decodeURIComponent(t.node.getAttribute("data-noticeid")||""):decodeURIComponent(t.node.getAttribute("data-id")||"")},calW:function(){var t=arguments.length>0&&void 0!==arguments[0]?arguments[0]:{},e=t.node.getAttribute("data-type")||"video",n=t.node.getAttribute("data-width")||"",r=t.node.getAttribute("data-height")||"";if("live"===e||"topic"===e)return t.parentWidth;if("image"===e)return.665*t.parentWidth;var i=1,o=0,a=0,d=!1;return 1===(i=n/r)||i===3/4||(i===4/3||i===16/9?d=!0:i<3/4?i=3/4:i>1&&i<4/3?i=1:i>4/3?d=!0:("number"!=typeof i||Object.is(i,NaN))&&(i=1)),t.node.setAttribute("data-datio",i),t.node.setAttribute("data-isHorizontal",d),o=(a=!0===d?t.parentWidth:window.innerWidth<1024?.65*window.innerWidth:.65*t.parentWidth)/i,t.node.setAttribute("data-computedWidth",a),t.node.setAttribute("data-computedHeight",o),a},calH:function(){var t=arguments.length>0&&void 0!==arguments[0]?arguments[0]:{},e=t.node.getAttribute("data-desc")||"",n=t.node.getAttribute("data-type")||"video",r=t.node.getAttribute("data-computedHeight")||"";switch(n){case"live":return e?152:116;case"topic":return 201;case"image":return e?this.calW(t)+44+35+27:this.calW(t)+44+35;case"video":return parseFloat(r)}},getBorderRadius:function(){var t=arguments.length>0&&void 0!==arguments[0]?arguments[0]:{},e=t.node.getAttribute("data-type")||"video";return"video"===e?4:8},replaceContentCssText:"",appendContentCssText:"margin:16px auto;diplay:block;",outerContainerLeft:"",outerContainerRight:""},{querySelector:"mp-wxaproduct",genId:function(){var t=arguments.length>0&&void 0!==arguments[0]?arguments[0]:{};return decodeURIComponent(t.node.getAttribute("data-wxaproduct-productid")||"")},calW:function(){var t=arguments.length>0&&void 0!==arguments[0]?arguments[0]:{};return 1*t.parentWidth},calH:function(){var t=arguments.length>0&&void 0!==arguments[0]?arguments[0]:{},e=t.node.getAttribute("data-wxaproduct-cardtype")||"";return"mini"===e?124:466},replaceContentCssText:"",appendContentCssText:"margin:16px 0;diplay:block;",outerContainerLeft:"",outerContainerRight:""},{querySelector:"mpprofile",genId:function(t){return t.node.getAttribute("data-id")||""},calW:function(){var t=arguments.length>0&&void 0!==arguments[0]?arguments[0]:{};return 1*t.parentWidth},calH:function(){return 143},replaceContentCssText:"",appendContentCssText:"margin:16px 0 16px;diplay:block;",outerContainerLeft:"",outerContainerRight:""}]};!function(){var t=arguments.length>0&&void 0!==arguments[0]?arguments[0]:{};if("function"==typeof document.querySelectorAll)for(var e={maxWith:document.getElementById("img-content").getBoundingClientRect().width,idAttr:"data-preloadingid"},n=0,r=t.config.length;n<r;n++)for(var i=t.config[n],o=document.querySelectorAll(i.querySelector),a=0,d=o.length;a<d;a++){var c=o[a],u=c.parentNode.getBoundingClientRect().width;if(u=Math.min(u,e.maxWith),!c.getAttribute("has-insert-preloading")){var l=i.calW({parentWidth:u,node:c}),p=i.calH({parentWidth:u,node:c}),g=i.genId({index:a,node:c}),s="function"==typeof i.getBorderRadius?i.getBorderRadius({index:a,node:c}):8,h=t.defaultContentTpl.replace(/#height#/g,p).replace(/#width#/g,l).replace(/#borderRadius#/g,s),C=document.createElement("div");if(C.innerHTML=h,i.replaceContentCssText){var f=i.replaceContentCssText.replace(/#height#/g,p).replace(/#width#/g,l);C.firstChild.style.cssText=f}else i.appendContentCssText&&(C.firstChild.style.cssText+=i.appendContentCssText);var v=i.outerContainerLeft+C.innerHTML+i.outerContainerRight;C.innerHTML=v,C.firstChild.setAttribute(e.idAttr,g),c.parentNode.insertBefore(C.firstChild,c.nextSibling),c.setAttribute("has-insert-preloading","1")}}}(t)}();</script>
+<script type="text/javascript" nonce="1102006763" reportloaderror>
+// 白名单的class不能去除
+var whiteList = 'rich_pages,blockquote_info,blockquote_biz,blockquote_other,blockquote_article,js_jump_icon,h5_image_link,js_banner_container,js_list_container,js_cover,js_tx_video_container,js_product_err_container,js_product_loop_content,js_product_container,img_loading,list-paddingleft-1,list-paddingleft-2,list-paddingleft-3,selectTdClass,noBorderTable,ue-table-interlace-color-single,ue-table-interlace-color-double,__bg_gif,weapp_text_link,weapp_image_link,js_img_loading,wx_video_context,db,wx_video_thumb_primary,wx_video_play_btn,wx_video_mask,qqmusic_area,tc,tips_global,unsupport_tips,qqmusic_wrp,appmsg_card_context,appmsg_card_active,wx_tap_card,js_wx_tap_highlight,wx_tap_link,qqmusic_bd,play_area,icon_qqmusic_switch,pic_qqmusic_default,qqmusic_thumb,access_area,qqmusic_songname,qqmusic_singername,qqmusic_source,js_audio_frame,share_audio_context,flex_context,pages_reset,share_audio_switch,icon_share_audio_switch,share_audio_info,flex_bd,share_audio_title,share_audio_tips,share_audio_progress_wrp,share_audio_progress,share_audio_progress_inner,share_audio_progress_buffer,share_audio_progress_loading,share_audio_progress_loading_inner,share_audio_progress_handle,share_audio_desc,share_audio_length_current,share_audio_length_total,video_iframe,vote_iframe,js_editor_vote_card,res_iframe,card_iframe,js_editor_card,weapp_display_element,js_weapp_display_element,weapp_card,app_context,weapp_card_bd,weapp_card_profile,radius_avatar,weapp_card_avatar,weapp_card_nickname,weapp_card_info,weapp_card_title,weapp_card_thumb_wrp,weapp_card_ft,weapp_card_logo,js_pay_btn,pay,pay__mask,wx_video_loading,js_redpacketcover,js_uneditable,js_uneditablemouseover,js_editor_qqmusic,js_editor_audio,ct_geography_loc_tip,js_poi_entry,subsc_context,subsc_btn,reset_btn,js_subsc_btn,icon_subsc'.split(',');
+var qaClassPrefix = 'qa__';
+var whiteListReg = [
+  new RegExp("^wxw"),
+  new RegExp("^weui"),
+  new RegExp("^appmsg"),
+  new RegExp("^audio"),
+  new RegExp("^music"),
+  new RegExp("^cps_inner"),
+  new RegExp("^bizsvr_"), // 后台压缩样式
+  new RegExp("^code-snippet"), // 代码块样式
+  new RegExp("^" + qaClassPrefix), // 问答卡片样式
+  new RegExp("^wx-edui-"), // 图文编辑器相关样式统一前缀
+  new RegExp("^wx_"), // 微信样式统一前缀
+  new RegExp("^wx-"), // 微信样式统一前缀
+  new RegExp('^js_darkmode__'), // 暗黑模式统一前缀
+  new RegExp('^js_wechannel'), // 视频号统一前缀
+];
+</script>
+<script type="text/javascript" nonce="1102006763" reportloaderror>
+function htmlDecode(str) {
+  return str
+    .replace(/&#39;/g, '\'')
+    .replace(/<br\s*(\/)?\s*>/g, '\n')
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&amp;/g, '&')
+    .replace(/&nbsp;/g, ' ');
+}
+
+var uin = '';
+var key = '';
+var pass_ticket = '';
+var new_appmsg = 1;
+var item_show_type = "0";
+var real_item_show_type = "0";
+var can_see_complaint = "0";
+var tid = "";
+var aid = "";
+var clientversion = "";
+var appuin = "" || "MzUzNDg3OTE2Mw==";
+var voiceid = "";
+
+var source = "";
+var ascene = "";
+var subscene = "";
+var sessionid = "" || "svr_b3119c9d5e7";
+var abtest_cookie = "";
+
+var scene = 75;
+
+var itemidx = "";
+var appmsg_token = "";
+var _copyright_stat = "1";
+var _ori_article_type = "财经_股票";
+
+var is_follow = "";
+var nickname = "伯庸智库";
+var appmsg_type = "9";
+var ct = "1654662151";
+var user_name = "gh_48235cd3df43";
+var fakeid = "";
+var version = "";
+var is_limit_user = "0";
+var round_head_img = "http://mmbiz.qpic.cn/mmbiz_png/qGHSSMNJuhOwL7Zsav04ZdoUjq128fCibUAeGpYZCB3u0Kj5Qguh6Sibic6v4wiaXiceU0f7WPU4mr4ZbGcv1ZgHlUw/0?wx_fmt=png";
+var hd_head_img = "http://wx.qlogo.cn/mmhead/Q3auHgzwzM5y5eruVgIalXzISyhSgXohM9fjK5N9hNgDbtsedbUdUw/0" || "";
+var ori_head_img_url = "http://wx.qlogo.cn/mmhead/Q3auHgzwzM5y5eruVgIalXzISyhSgXohM9fjK5N9hNgDbtsedbUdUw/132";
+var msg_title = '以周期思维看待当下行情，不必悲观'.html(false);
+var msg_desc = htmlDecode("闲谈随笔，谈一下对最近市场的一些所思所闻。");
+var msg_cdn_url = "http://mmbiz.qpic.cn/mmbiz_jpg/qGHSSMNJuhN9O3rBlnJe7nnP2zWAdY6l5plOYgBwT2ibmRyYZsTJXQbzwribywwiavh1kLmOcUL3bFjH0mNlQYjxg/0?wx_fmt=jpeg"; // 首图idx=0时2.35:1 ， 次图idx!=0时1:1
+var cdn_url_1_1 = "https://mmbiz.qlogo.cn/mmbiz_jpg/qGHSSMNJuhN9O3rBlnJe7nnP2zWAdY6lJwXfyIEmaOtkZkpPf6bxACeut6T2ib82ibSL5Pn7DHlcbHAbicKgXjFpw/0?wx_fmt=jpeg"; // 1:1比例的封面图
+var cdn_url_235_1 = "https://mmbiz.qlogo.cn/mmbiz_jpg/qGHSSMNJuhN9O3rBlnJe7nnP2zWAdY6l5plOYgBwT2ibmRyYZsTJXQbzwribywwiavh1kLmOcUL3bFjH0mNlQYjxg/0?wx_fmt=jpeg"; // 首图idx=0时2.35:1 ， 次图idx!=0时1:1
+// var msg_link = "";
+var msg_link = ""; // @radeonwu
+var user_uin = "" * 1;
+var msg_source_url = '';
+var img_format = 'jpeg';
+var srcid = '';
+var req_id = '100005hPgvTkkNj5hov8EgzQ';
+var networkType;
+var appmsgid = "2247489568" || '' || '';
+var comment_id = "0" || "0" * 1;
+var comment_enabled = "" * 1;
+var open_fansmsg = "1" * 1;
+var is_https_res = ("" * 1) && (location.protocol == "https:");
+var msg_daily_idx = "1" || "";
+var profileReportInfo = "" || "";
+
+var devicetype = "";
+var source_encode_biz = ""; // 转载来源的公众号encode biz
+var source_username = "";
+// var profile_ext_signature = "" || "";
+var reprint_ticket = "";
+var source_mid = "";
+var source_idx = "";
+var source_biz = "";
+var author_id = "ofMoI46oGXu8u5zXIo7AB_WlJdBk";
+
+// 关注组件灰度实验
+var is_like_profile_gray = '0' * 1;
+
+// 以下前端灰度逻辑干掉，改为后端控制
+// var is_like_profile_gray = (function() {
+//   return (Math.floor(user_uin / 383) % 100) <= 1; // 灰度50%
+// })();
+// if(user_uin === 3190046805 || user_uin === 1808514905) {
+//   is_like_profile_gray  = false;
+// }
+// if(user_uin === 594425220 || user_uin === 3194185190|| user_uin === 3190046801 || user_uin ===  245916855 || user_uin === 2453457861) {
+//   is_like_profile_gray  = true;
+// }
+
+console.log('is_like_profile_gray' + is_like_profile_gray)
+// 压缩标志位
+var optimizing_flag = "0" * 1;
+
+// 广告灰度实验取消 @add by scotthuang
+// var ad_abtest_padding = "0" * 1;
+
+var show_comment = "";
+var __appmsgCgiData = {
+  wxa_product: "" * 1,
+  wxa_cps: "" * 1,
+  show_msg_voice: "0" * 1,
+  can_use_page: "" * 1,
+  is_wxg_stuff_uin: "0" * 1,
+  card_pos: "",
+  copyright_stat: "1",
+  source_biz: "",
+  hd_head_img: "http://wx.qlogo.cn/mmhead/Q3auHgzwzM5y5eruVgIalXzISyhSgXohM9fjK5N9hNgDbtsedbUdUw/0" || (window.location.protocol + "//" + window.location.host + "//res.wx.qq.com/mmbizwap/zh_CN/htmledition/images/pic/appmsg/pic_rumor_link.2x5e7895.jpg"),
+  has_red_packet_cover: "0" * 1 || 0,
+  minishopCardData: ""
+};
+var _empty_v = "//res.wx.qq.com/mmbizwap/zh_CN/htmledition/images/pic/pages/voice/empty5e7895.mp3";
+var appmsg_album_info = (function () {
+  var curAlbumId = '';
+  var publicTagInfo = [
+              ];
+  for (var i = 0; i < publicTagInfo.length; i++) {
+    if (curAlbumId) {
+      if (curAlbumId === publicTagInfo[i].id) {
+        return publicTagInfo[i];
+      }
+    } else {
+      if (publicTagInfo[i].continousReadOn) {
+        return publicTagInfo[i];
+      }
+    }
+  }
+  return {};
+})();
+var copyright_stat = "1" * 1;
+var hideSource = "" * 1;
+
+var pay_fee = "" * 1;
+var pay_timestamp = "";
+var need_pay = "" * 1;
+var is_pay_subscribe = "0" * 1;
+
+var need_report_cost = "0" * 1;
+var use_tx_video_player = "0" * 1;
+var appmsg_fe_filter = "contenteditable";
+
+var friend_read_source = "" || "";
+var friend_read_version = "" || "";
+var friend_read_class_id = "" || "";
+
+var is_only_read = "1" * 1;
+var read_num = "" * 1;
+var like_num = "" * 1;
+var liked = "" == 'true' ? true : false;
+var is_temp_url = "" ? 1 : 0;
+var send_time = "";
+var icon_emotion_switch = "//res.wx.qq.com/mmbizwap/zh_CN/htmledition/images/icon/appmsg/emotion/icon_emotion_switch5e7895.svg";
+var icon_emotion_switch_active = "//res.wx.qq.com/mmbizwap/zh_CN/htmledition/images/icon/appmsg/emotion/icon_emotion_switch_active5e7895.svg";
+var icon_emotion_switch_primary = "//res.wx.qq.com/mmbizwap/zh_CN/htmledition/images/icon/appmsg/emotion/icon_emotion_switch_primary5e7895.svg";
+var icon_emotion_switch_active_primary = "//res.wx.qq.com/mmbizwap/zh_CN/htmledition/images/icon/appmsg/emotion/icon_emotion_switch_active_primary5e7895.svg";
+var icon_loading_white = "//res.wx.qq.com/mmbizwap/zh_CN/htmledition/images/icon/common/icon_loading_white5e7895.gif";
+var icon_audio_unread = "//res.wx.qq.com/mmbizwap/zh_CN/htmledition/images/icon/appmsg/audio/icon_audio_unread5e7895.png";
+var icon_qqmusic_default = "//res.wx.qq.com/mmbizwap/zh_CN/htmledition/images/icon/appmsg/qqmusic/icon_qqmusic_default.2x5e7895.png";
+var icon_qqmusic_source = "//res.wx.qq.com/mmbizwap/zh_CN/htmledition/images/icon/appmsg/qqmusic/icon_qqmusic_source5e7895.svg";
+var icon_kugou_source = "//res.wx.qq.com/mmbizwap/zh_CN/htmledition/images/icon/appmsg/kugou/icon_kugou_source5e7895.png";
+
+var topic_default_img = '//res.wx.qq.com/mmbizwap/zh_CN/htmledition/images/icon/appmsg/topic/pic_book_thumb.2x5e7895.png';
+var comment_edit_icon = '//res.wx.qq.com/mmbizwap/zh_CN/htmledition/images/icon/appmsg_new/icon_edit5e7895.png';
+var comment_loading_img = '//res.wx.qq.com/mmbizwap/zh_CN/htmledition/images/icon/common/icon_loading_white5e7895.gif';
+var comment_c2c_not_support_img = '//res.wx.qq.com/mmbizwap/zh_CN/htmledition/images/pic/appmsg/pic_discuss_more5e7895.png';
+
+var voice_in_appmsg = {
+  "1": "1"
+  };
+var voiceList = {};
+voiceList={"voice_in_appmsg":[]}
+var reprint_style = '' * 1;
+var wxa_img_alert = "" != 'false';
+
+// 小程序相关数据
+var weapp_sn_arr_json = "" || "";
+
+// 视频号相关数据
+var video_snap_json = "" || "";
+// profile相关数据
+var mp_profile = [
+  ];
+
+// 能力封禁字段
+var ban_scene = "0" * 1;
+
+var svr_time = "1654791238" * 1;
+// 加迁移文章字段, 默认为false
+var is_transfer_msg = "" * 1 || 0;
+
+var malicious_title_reason_id = "0" * 1; // 标题党wording id @radeonwu
+var malicious_content_type = "0" * 1; // 标题党类型 @radeonwu
+
+// 修改错别字逻辑
+var modify_time = "";
+
+// 限制跳转到公众号profile @radeonwu
+var isprofileblock = "0";
+
+var jumpInfo = [
+    ];
+
+var hasRelatedArticleInfo = '0' * 1 || 0; // 有相关阅读的数据 @radeonwu
+var relatedArticleFlag = '' * 1 || 0; // 0不用拓展，为1时拓展3条 @yinshen
+
+var canUseAutoTypeSetting = '0' * 1 || 0; // 可以应用到自动排版样式
+window.wxtoken = "777";
+window.is_login = '' * 1; // 把上面的那段代码改一下，方便配置回退
+
+window.__moon_initcallback = function () {
+  if (!!window.__initCatch) {
+    window.__initCatch({
+      idkey: 27611 + 2,
+      startKey: 0,
+      limit: 128,
+      badjsId: 43,
+      reportOpt: {
+        uin: uin,
+        biz: biz,
+        mid: mid,
+        idx: idx,
+        sn: sn
+      },
+      extInfo: {
+        network_rate: 0.01,    //网络错误采样率
+        badjs_rate: 0.1 // badjs上报叠加采样率
+      }
+    });
+  }
+}
+window.isSg=true;
+window.sg_qr_code = "/rr?timestamp=1654791238\x26amp;src=11\x26amp;ver=1\x26amp;signature=cn*1O73OfVR8ZMc-z9IwWyIbA5jPyw748Q-**fzdUw7zFal8GBhobXcnCGUeP6rZi*j7wFpH9gQ*vjemmE9JmXhqBJGGgEAgoeTsG2RHGW8=";
+window.sg_data = {
+  src: "11",
+  ver: "3850",
+  timestamp: "1654791052",
+  signature: "yEwDyMKQynRZx5t7xCUjwOikoK99Vc38H4jFhv5XOu29Pp4OpQStXmRi7FbsWHvbv1gVnzIXihMw*iu1yllKT0y*XqAylrA32npLO4v3weQrYaCOZyurCy491LfLM5oD"
+};
+window.__moon_initcallback = function () {
+  if (!!window.__initCatch) {
+    window.__initCatch({
+      idkey: 29711,
+      startKey: 120,
+      badjsId: 63,
+      reportOpt: {
+        uin: uin,
+        biz: biz,
+        mid: mid,
+        idx: idx,
+        sn: sn
+      },
+      extInfo: {
+        network_rate: 0.01    //网络错误采样率
+      }
+    });
+  }
+};
+// msg_title != title
+var title = "伯庸智库";
+
+var is_new_msg = true;
+// var appmsg_like_type = "2" * 1 ? "2" * 1 : 1; //区分点赞和看一看
+// var appmsg_like_type = 2;
+
+var is_wash = '' * 1;
+var topbarEnable = false;
+var enterid = "" * 1 || "" * 1 || parseInt(Date.now() / 1000);
+// var appid_list = ""; // 改图文所在的小程序的appid列表，只在小程序中使用
+var miniprogram_appid = ""; // 该图文所在的小程序的appid
+
+var defaultAvatarUrl = '//res.wx.qq.com/mmbizwap/zh_CN/htmledition/images/pic/common/avatar_default5e7895.svg';
+
+document.addEventListener('DOMContentLoaded', function () {
+  window.domCompleteTime = Date.now();
+});
+
+// 记录是否有转载推荐语
+      var hasRecommendMsg = 0;
+  ;
+// 付费阅读
+var isPayTopic = '' * 1;
+  var payTopicPrice = '' * 1;
+var isRemovedFromPayTopic = '' * 1;
+var isPaySubscribe = '0' * 1; // 是否付费文章
+var isPaid = '0' * 1; // 是否已付费
+var isRefund = '' * 1; // 是否已退款
+var payShowIAPPrice = 1; // 是否启用IAP价格显示，用于外币显示
+var payProductId = '' || ''; // 付费金额对应商品ID，用于iOS多币种金额IAP查询
+var previewPercent = '0' || ''; // 试读比例
+var payGiftsCount = '0' * 1 || 0; // 付费赠送数量
+var payFreeGift = '' * 1 || 0; // 是否是领取付费赠送的用户
+var is_finished_preview = 0; // 是否试读完
+var jump2pay = '' * 1; // 是否跳转到支付按钮的位置
+
+var isFans; // getext里获取数据再塞到这里
+var is_need_reward = (isPaySubscribe && !isPaid) ? 0 : "1" * 1; // 非付费不可赞赏
+var is_teenager = '' * 1 || 0; //是否处于青少年模式
+var is_care_mode = '' * 1 || 0; //是否处于关怀模式
+
+// 段落投诉
+var anchor_tree_msg = '';
+// Dark Mode
+var colorScheme = ''; // ''|'dark'|'light', 空表示跟随系统
+
+var iapPriceInfo = {
+  };
+var productPayPackage = {
+    iap_price_info: iapPriceInfo
+};
+
+// 漫画原创
+var isCartoonCopyright = '0' * 1; // 是否漫画原创
+
+// 图文朗读
+var show_msg_voice = '' * 1;
+var qnaCardData = '';
+var exptype = '' || '';
+var expsessionid = '' || '';
+
+// 留言相关
+var goContentId = '';
+var goReplyId = '';
+
+var show_related_article = '' * 1; // 是否强制出相关阅读
+
+var wwdistype = ''; // 企微场景，industrynews表示行业资讯
+
+// 腾讯视频相关
+window.cgiData = {
+  appImg: '//res.wx.qq.com/mmbizwap/zh_CN/htmledition/images/pic/pages/video/pic_v.2x5e7895.png',
+}
+
+window.ip_wording = {
+  countryName: '中国',
+  countryId: '156',
+  provinceName: '山东',
+  provinceId: '',
+  cityName: '',
+  cityId: ''
+};
+window.show_ip_wording = '1' * 1;
+</script>
+<script type="text/javascript" nonce="1102006763" reportloaderror>
+// 企业微信里置灰公众号名称
+(function() {
+  if (window.is_like_profile_gray) {
+    var activityDetail = document.getElementById('activity-detail');
+    if (activityDetail) {
+      activityDetail.classList.add('page_bottom_primary');
+    }
+  }
+})();
+</script><script type="text/javascript" nonce="1102006763" reportloaderror>var __INLINE_SCRIPT__=function(){"use strict";var n=function(n){var i=document.getElementById("js_ip_wording_wrp"),o=document.getElementById("js_ip_wording");if(n&&(window.ip_wording={countryName:n.country_name,countryId:n.country_id,provinceName:n.province_name}),window.ip_wording&&i&&o){var r=function(n){var i="";return 156===parseInt(n.countryId,10)?i=n.provinceName:n.countryId&&(i=n.countryName),i}(window.ip_wording);""!==r&&(o.innerHTML=r,i.style.display="inline-block")}};return window.__second_open__||(n(),window.__setIpWording=n),n}();</script><script type="text/javascript" nonce="1102006763" reportloaderror>!function(e,t){"object"==typeof exports&&"object"==typeof module?module.exports=t():"function"==typeof define&&define.amd?define("Darkmode",[],t):"object"==typeof exports?exports.Darkmode=t():e.Darkmode=t()}(window,(function(){return function(e){var t={};function r(n){if(t[n])return t[n].exports;var a=t[n]={i:n,l:!1,exports:{}};return e[n].call(a.exports,a,a.exports,r),a.l=!0,a.exports}return r.m=e,r.c=t,r.d=function(e,t,n){r.o(e,t)||Object.defineProperty(e,t,{enumerable:!0,get:n})},r.r=function(e){"undefined"!=typeof Symbol&&Symbol.toStringTag&&Object.defineProperty(e,Symbol.toStringTag,{value:"Module"}),Object.defineProperty(e,"__esModule",{value:!0})},r.t=function(e,t){if(1&t&&(e=r(e)),8&t)return e;if(4&t&&"object"==typeof e&&e&&e.__esModule)return e;var n=Object.create(null);if(r.r(n),Object.defineProperty(n,"default",{enumerable:!0,value:e}),2&t&&"string"!=typeof e)for(var a in e)r.d(n,a,function(t){return e[t]}.bind(null,a));return n},r.n=function(e){var t=e&&e.__esModule?function(){return e.default}:function(){return e};return r.d(t,"a",t),t},r.o=function(e,t){return Object.prototype.hasOwnProperty.call(e,t)},r.p="",r(r.s=9)}([function(e,t,r){"use strict";var n=r(3),a=r(6),o=[].slice,i=["keyword","gray","hex"],l={};Object.keys(a).forEach((function(e){l[o.call(a[e].labels).sort().join("")]=e}));var s={};function u(e,t){if(!(this instanceof u))return new u(e,t);if(t&&t in i&&(t=null),t&&!(t in a))throw new Error("Unknown model: "+t);var r,c;if(null==e)this.model="rgb",this.color=[0,0,0],this.valpha=1;else if(e instanceof u)this.model=e.model,this.color=e.color.slice(),this.valpha=e.valpha;else if("string"==typeof e){var h=n.get(e);if(null===h)throw new Error("Unable to parse color from string: "+e);this.model=h.model,c=a[this.model].channels,this.color=h.value.slice(0,c),this.valpha="number"==typeof h.value[c]?h.value[c]:1}else if(e.length){this.model=t||"rgb",c=a[this.model].channels;var f=o.call(e,0,c);this.color=d(f,c),this.valpha="number"==typeof e[c]?e[c]:1}else if("number"==typeof e)e&=16777215,this.model="rgb",this.color=[e>>16&255,e>>8&255,255&e],this.valpha=1;else{this.valpha=1;var g=Object.keys(e);"alpha"in e&&(g.splice(g.indexOf("alpha"),1),this.valpha="number"==typeof e.alpha?e.alpha:0);var b=g.sort().join("");if(!(b in l))throw new Error("Unable to parse color from object: "+JSON.stringify(e));this.model=l[b];var p=a[this.model].labels,y=[];for(r=0;r<p.length;r++)y.push(e[p[r]]);this.color=d(y)}if(s[this.model])for(c=a[this.model].channels,r=0;r<c;r++){var m=s[this.model][r];m&&(this.color[r]=m(this.color[r]))}this.valpha=Math.max(0,Math.min(1,this.valpha)),Object.freeze&&Object.freeze(this)}function c(e,t,r){return(e=Array.isArray(e)?e:[e]).forEach((function(e){(s[e]||(s[e]=[]))[t]=r})),e=e[0],function(n){var a;return arguments.length?(r&&(n=r(n)),(a=this[e]()).color[t]=n,a):(a=this[e]().color[t],r&&(a=r(a)),a)}}function h(e){return function(t){return Math.max(0,Math.min(e,t))}}function f(e){return Array.isArray(e)?e:[e]}function d(e,t){for(var r=0;r<t;r++)"number"!=typeof e[r]&&(e[r]=0);return e}u.prototype={toString:function(){return this.string()},toJSON:function(){return this[this.model]()},string:function(e){var t=this.model in n.to?this:this.rgb(),r=1===(t=t.round("number"==typeof e?e:1)).valpha?t.color:t.color.concat(this.valpha);return n.to[t.model](r)},percentString:function(e){var t=this.rgb().round("number"==typeof e?e:1),r=1===t.valpha?t.color:t.color.concat(this.valpha);return n.to.rgb.percent(r)},array:function(){return 1===this.valpha?this.color.slice():this.color.concat(this.valpha)},object:function(){for(var e={},t=a[this.model].channels,r=a[this.model].labels,n=0;n<t;n++)e[r[n]]=this.color[n];return 1!==this.valpha&&(e.alpha=this.valpha),e},unitArray:function(){var e=this.rgb().color;return e[0]/=255,e[1]/=255,e[2]/=255,1!==this.valpha&&e.push(this.valpha),e},unitObject:function(){var e=this.rgb().object();return e.r/=255,e.g/=255,e.b/=255,1!==this.valpha&&(e.alpha=this.valpha),e},round:function(e){return e=Math.max(e||0,0),new u(this.color.map(function(e){return function(t){return function(e,t){return Number(e.toFixed(t))}(t,e)}}(e)).concat(this.valpha),this.model)},alpha:function(e){return arguments.length?new u(this.color.concat(Math.max(0,Math.min(1,e))),this.model):this.valpha},red:c("rgb",0,h(255)),green:c("rgb",1,h(255)),blue:c("rgb",2,h(255)),hue:c(["hsl","hsv","hsl","hwb","hcg"],0,(function(e){return(e%360+360)%360})),saturationl:c("hsl",1,h(100)),lightness:c("hsl",2,h(100)),saturationv:c("hsv",1,h(100)),value:c("hsv",2,h(100)),chroma:c("hcg",1,h(100)),gray:c("hcg",2,h(100)),white:c("hwb",1,h(100)),wblack:c("hwb",2,h(100)),cyan:c("cmyk",0,h(100)),magenta:c("cmyk",1,h(100)),yellow:c("cmyk",2,h(100)),black:c("cmyk",3,h(100)),x:c("xyz",0,h(100)),y:c("xyz",1,h(100)),z:c("xyz",2,h(100)),l:c("lab",0,h(100)),a:c("lab",1),b:c("lab",2),keyword:function(e){return arguments.length?new u(e):a[this.model].keyword(this.color)},hex:function(e){return arguments.length?new u(e):n.to.hex(this.rgb().round().color)},rgbNumber:function(){var e=this.rgb().color;return(255&e[0])<<16|(255&e[1])<<8|255&e[2]},luminosity:function(){for(var e=this.rgb().color,t=[],r=0;r<e.length;r++){var n=e[r]/255;t[r]=n<=.03928?n/12.92:Math.pow((n+.055)/1.055,2.4)}return.2126*t[0]+.7152*t[1]+.0722*t[2]},contrast:function(e){var t=this.luminosity(),r=e.luminosity();return t>r?(t+.05)/(r+.05):(r+.05)/(t+.05)},level:function(e){var t=this.contrast(e);return t>=7.1?"AAA":t>=4.5?"AA":""},isDark:function(){var e=this.rgb().color;return(299*e[0]+587*e[1]+114*e[2])/1e3<128},isLight:function(){return!this.isDark()},negate:function(){for(var e=this.rgb(),t=0;t<3;t++)e.color[t]=255-e.color[t];return e},lighten:function(e){var t=this.hsl();return t.color[2]+=t.color[2]*e,t},darken:function(e){var t=this.hsl();return t.color[2]-=t.color[2]*e,t},saturate:function(e){var t=this.hsl();return t.color[1]+=t.color[1]*e,t},desaturate:function(e){var t=this.hsl();return t.color[1]-=t.color[1]*e,t},whiten:function(e){var t=this.hwb();return t.color[1]+=t.color[1]*e,t},blacken:function(e){var t=this.hwb();return t.color[2]+=t.color[2]*e,t},grayscale:function(){var e=this.rgb().color,t=.3*e[0]+.59*e[1]+.11*e[2];return u.rgb(t,t,t)},fade:function(e){return this.alpha(this.valpha-this.valpha*e)},opaquer:function(e){return this.alpha(this.valpha+this.valpha*e)},rotate:function(e){var t=this.hsl(),r=t.color[0];return r=(r=(r+e)%360)<0?360+r:r,t.color[0]=r,t},mix:function(e,t){if(!e||!e.rgb)throw new Error('Argument to "mix" was not a Color instance, but rather an instance of '+typeof e);var r=e.rgb(),n=this.rgb(),a=void 0===t?.5:t,o=2*a-1,i=r.alpha()-n.alpha(),l=((o*i==-1?o:(o+i)/(1+o*i))+1)/2,s=1-l;return u.rgb(l*r.red()+s*n.red(),l*r.green()+s*n.green(),l*r.blue()+s*n.blue(),r.alpha()*a+n.alpha()*(1-a))}},Object.keys(a).forEach((function(e){if(-1===i.indexOf(e)){var t=a[e].channels;u.prototype[e]=function(){if(this.model===e)return new u(this);if(arguments.length)return new u(arguments,e);var r="number"==typeof arguments[t]?t:this.valpha;return new u(f(a[this.model][e].raw(this.color)).concat(r),e)},u[e]=function(r){return"number"==typeof r&&(r=d(o.call(arguments),t)),new u(r,e)}}})),e.exports=u},function(e,t,r){"use strict";e.exports={aliceblue:[240,248,255],antiquewhite:[250,235,215],aqua:[0,255,255],aquamarine:[127,255,212],azure:[240,255,255],beige:[245,245,220],bisque:[255,228,196],black:[0,0,0],blanchedalmond:[255,235,205],blue:[0,0,255],blueviolet:[138,43,226],brown:[165,42,42],burlywood:[222,184,135],cadetblue:[95,158,160],chartreuse:[127,255,0],chocolate:[210,105,30],coral:[255,127,80],cornflowerblue:[100,149,237],cornsilk:[255,248,220],crimson:[220,20,60],cyan:[0,255,255],darkblue:[0,0,139],darkcyan:[0,139,139],darkgoldenrod:[184,134,11],darkgray:[169,169,169],darkgreen:[0,100,0],darkgrey:[169,169,169],darkkhaki:[189,183,107],darkmagenta:[139,0,139],darkolivegreen:[85,107,47],darkorange:[255,140,0],darkorchid:[153,50,204],darkred:[139,0,0],darksalmon:[233,150,122],darkseagreen:[143,188,143],darkslateblue:[72,61,139],darkslategray:[47,79,79],darkslategrey:[47,79,79],darkturquoise:[0,206,209],darkviolet:[148,0,211],deeppink:[255,20,147],deepskyblue:[0,191,255],dimgray:[105,105,105],dimgrey:[105,105,105],dodgerblue:[30,144,255],firebrick:[178,34,34],floralwhite:[255,250,240],forestgreen:[34,139,34],fuchsia:[255,0,255],gainsboro:[220,220,220],ghostwhite:[248,248,255],gold:[255,215,0],goldenrod:[218,165,32],gray:[128,128,128],green:[0,128,0],greenyellow:[173,255,47],grey:[128,128,128],honeydew:[240,255,240],hotpink:[255,105,180],indianred:[205,92,92],indigo:[75,0,130],ivory:[255,255,240],khaki:[240,230,140],lavender:[230,230,250],lavenderblush:[255,240,245],lawngreen:[124,252,0],lemonchiffon:[255,250,205],lightblue:[173,216,230],lightcoral:[240,128,128],lightcyan:[224,255,255],lightgoldenrodyellow:[250,250,210],lightgray:[211,211,211],lightgreen:[144,238,144],lightgrey:[211,211,211],lightpink:[255,182,193],lightsalmon:[255,160,122],lightseagreen:[32,178,170],lightskyblue:[135,206,250],lightslategray:[119,136,153],lightslategrey:[119,136,153],lightsteelblue:[176,196,222],lightyellow:[255,255,224],lime:[0,255,0],limegreen:[50,205,50],linen:[250,240,230],magenta:[255,0,255],maroon:[128,0,0],mediumaquamarine:[102,205,170],mediumblue:[0,0,205],mediumorchid:[186,85,211],mediumpurple:[147,112,219],mediumseagreen:[60,179,113],mediumslateblue:[123,104,238],mediumspringgreen:[0,250,154],mediumturquoise:[72,209,204],mediumvioletred:[199,21,133],midnightblue:[25,25,112],mintcream:[245,255,250],mistyrose:[255,228,225],moccasin:[255,228,181],navajowhite:[255,222,173],navy:[0,0,128],oldlace:[253,245,230],olive:[128,128,0],olivedrab:[107,142,35],orange:[255,165,0],orangered:[255,69,0],orchid:[218,112,214],palegoldenrod:[238,232,170],palegreen:[152,251,152],paleturquoise:[175,238,238],palevioletred:[219,112,147],papayawhip:[255,239,213],peachpuff:[255,218,185],peru:[205,133,63],pink:[255,192,203],plum:[221,160,221],powderblue:[176,224,230],purple:[128,0,128],rebeccapurple:[102,51,153],red:[255,0,0],rosybrown:[188,143,143],royalblue:[65,105,225],saddlebrown:[139,69,19],salmon:[250,128,114],sandybrown:[244,164,96],seagreen:[46,139,87],seashell:[255,245,238],sienna:[160,82,45],silver:[192,192,192],skyblue:[135,206,235],slateblue:[106,90,205],slategray:[112,128,144],slategrey:[112,128,144],snow:[255,250,250],springgreen:[0,255,127],steelblue:[70,130,180],tan:[210,180,140],teal:[0,128,128],thistle:[216,191,216],tomato:[255,99,71],turquoise:[64,224,208],violet:[238,130,238],wheat:[245,222,179],white:[255,255,255],whitesmoke:[245,245,245],yellow:[255,255,0],yellowgreen:[154,205,50]}},function(e,t,r){var n=r(7),a={};for(var o in n)n.hasOwnProperty(o)&&(a[n[o]]=o);var i=e.exports={rgb:{channels:3,labels:"rgb"},hsl:{channels:3,labels:"hsl"},hsv:{channels:3,labels:"hsv"},hwb:{channels:3,labels:"hwb"},cmyk:{channels:4,labels:"cmyk"},xyz:{channels:3,labels:"xyz"},lab:{channels:3,labels:"lab"},lch:{channels:3,labels:"lch"},hex:{channels:1,labels:["hex"]},keyword:{channels:1,labels:["keyword"]},ansi16:{channels:1,labels:["ansi16"]},ansi256:{channels:1,labels:["ansi256"]},hcg:{channels:3,labels:["h","c","g"]},apple:{channels:3,labels:["r16","g16","b16"]},gray:{channels:1,labels:["gray"]}};for(var l in i)if(i.hasOwnProperty(l)){if(!("channels"in i[l]))throw new Error("missing channels property: "+l);if(!("labels"in i[l]))throw new Error("missing channel labels property: "+l);if(i[l].labels.length!==i[l].channels)throw new Error("channel and label counts mismatch: "+l);var s=i[l].channels,u=i[l].labels;delete i[l].channels,delete i[l].labels,Object.defineProperty(i[l],"channels",{value:s}),Object.defineProperty(i[l],"labels",{value:u})}i.rgb.hsl=function(e){var t,r,n=e[0]/255,a=e[1]/255,o=e[2]/255,i=Math.min(n,a,o),l=Math.max(n,a,o),s=l-i;return l===i?t=0:n===l?t=(a-o)/s:a===l?t=2+(o-n)/s:o===l&&(t=4+(n-a)/s),(t=Math.min(60*t,360))<0&&(t+=360),r=(i+l)/2,[t,100*(l===i?0:r<=.5?s/(l+i):s/(2-l-i)),100*r]},i.rgb.hsv=function(e){var t,r,n,a,o,i=e[0]/255,l=e[1]/255,s=e[2]/255,u=Math.max(i,l,s),c=u-Math.min(i,l,s),h=function(e){return(u-e)/6/c+.5};return 0===c?a=o=0:(o=c/u,t=h(i),r=h(l),n=h(s),i===u?a=n-r:l===u?a=1/3+t-n:s===u&&(a=2/3+r-t),a<0?a+=1:a>1&&(a-=1)),[360*a,100*o,100*u]},i.rgb.hwb=function(e){var t=e[0],r=e[1],n=e[2];return[i.rgb.hsl(e)[0],100*(1/255*Math.min(t,Math.min(r,n))),100*(n=1-1/255*Math.max(t,Math.max(r,n)))]},i.rgb.cmyk=function(e){var t,r=e[0]/255,n=e[1]/255,a=e[2]/255;return[100*((1-r-(t=Math.min(1-r,1-n,1-a)))/(1-t)||0),100*((1-n-t)/(1-t)||0),100*((1-a-t)/(1-t)||0),100*t]},i.rgb.keyword=function(e){var t=a[e];if(t)return t;var r,o,i,l=1/0;for(var s in n)if(n.hasOwnProperty(s)){var u=n[s],c=(o=e,i=u,Math.pow(o[0]-i[0],2)+Math.pow(o[1]-i[1],2)+Math.pow(o[2]-i[2],2));c<l&&(l=c,r=s)}return r},i.keyword.rgb=function(e){return n[e]},i.rgb.xyz=function(e){var t=e[0]/255,r=e[1]/255,n=e[2]/255;return[100*(.4124*(t=t>.04045?Math.pow((t+.055)/1.055,2.4):t/12.92)+.3576*(r=r>.04045?Math.pow((r+.055)/1.055,2.4):r/12.92)+.1805*(n=n>.04045?Math.pow((n+.055)/1.055,2.4):n/12.92)),100*(.2126*t+.7152*r+.0722*n),100*(.0193*t+.1192*r+.9505*n)]},i.rgb.lab=function(e){var t=i.rgb.xyz(e),r=t[0],n=t[1],a=t[2];return n/=100,a/=108.883,r=(r/=95.047)>.008856?Math.pow(r,1/3):7.787*r+16/116,[116*(n=n>.008856?Math.pow(n,1/3):7.787*n+16/116)-16,500*(r-n),200*(n-(a=a>.008856?Math.pow(a,1/3):7.787*a+16/116))]},i.hsl.rgb=function(e){var t,r,n,a,o,i=e[0]/360,l=e[1]/100,s=e[2]/100;if(0===l)return[o=255*s,o,o];t=2*s-(r=s<.5?s*(1+l):s+l-s*l),a=[0,0,0];for(var u=0;u<3;u++)(n=i+1/3*-(u-1))<0&&n++,n>1&&n--,o=6*n<1?t+6*(r-t)*n:2*n<1?r:3*n<2?t+(r-t)*(2/3-n)*6:t,a[u]=255*o;return a},i.hsl.hsv=function(e){var t=e[0],r=e[1]/100,n=e[2]/100,a=r,o=Math.max(n,.01);return r*=(n*=2)<=1?n:2-n,a*=o<=1?o:2-o,[t,100*(0===n?2*a/(o+a):2*r/(n+r)),100*((n+r)/2)]},i.hsv.rgb=function(e){var t=e[0]/60,r=e[1]/100,n=e[2]/100,a=Math.floor(t)%6,o=t-Math.floor(t),i=255*n*(1-r),l=255*n*(1-r*o),s=255*n*(1-r*(1-o));switch(n*=255,a){case 0:return[n,s,i];case 1:return[l,n,i];case 2:return[i,n,s];case 3:return[i,l,n];case 4:return[s,i,n];case 5:return[n,i,l]}},i.hsv.hsl=function(e){var t,r,n,a=e[0],o=e[1]/100,i=e[2]/100,l=Math.max(i,.01);return n=(2-o)*i,r=o*l,[a,100*(r=(r/=(t=(2-o)*l)<=1?t:2-t)||0),100*(n/=2)]},i.hwb.rgb=function(e){var t,r,n,a,o,i,l,s=e[0]/360,u=e[1]/100,c=e[2]/100,h=u+c;switch(h>1&&(u/=h,c/=h),n=6*s-(t=Math.floor(6*s)),0!=(1&t)&&(n=1-n),a=u+n*((r=1-c)-u),t){default:case 6:case 0:o=r,i=a,l=u;break;case 1:o=a,i=r,l=u;break;case 2:o=u,i=r,l=a;break;case 3:o=u,i=a,l=r;break;case 4:o=a,i=u,l=r;break;case 5:o=r,i=u,l=a}return[255*o,255*i,255*l]},i.cmyk.rgb=function(e){var t=e[0]/100,r=e[1]/100,n=e[2]/100,a=e[3]/100;return[255*(1-Math.min(1,t*(1-a)+a)),255*(1-Math.min(1,r*(1-a)+a)),255*(1-Math.min(1,n*(1-a)+a))]},i.xyz.rgb=function(e){var t,r,n,a=e[0]/100,o=e[1]/100,i=e[2]/100;return r=-.9689*a+1.8758*o+.0415*i,n=.0557*a+-.204*o+1.057*i,t=(t=3.2406*a+-1.5372*o+-.4986*i)>.0031308?1.055*Math.pow(t,1/2.4)-.055:12.92*t,r=r>.0031308?1.055*Math.pow(r,1/2.4)-.055:12.92*r,n=n>.0031308?1.055*Math.pow(n,1/2.4)-.055:12.92*n,[255*(t=Math.min(Math.max(0,t),1)),255*(r=Math.min(Math.max(0,r),1)),255*(n=Math.min(Math.max(0,n),1))]},i.xyz.lab=function(e){var t=e[0],r=e[1],n=e[2];return r/=100,n/=108.883,t=(t/=95.047)>.008856?Math.pow(t,1/3):7.787*t+16/116,[116*(r=r>.008856?Math.pow(r,1/3):7.787*r+16/116)-16,500*(t-r),200*(r-(n=n>.008856?Math.pow(n,1/3):7.787*n+16/116))]},i.lab.xyz=function(e){var t,r,n,a=e[0];t=e[1]/500+(r=(a+16)/116),n=r-e[2]/200;var o=Math.pow(r,3),i=Math.pow(t,3),l=Math.pow(n,3);return r=o>.008856?o:(r-16/116)/7.787,t=i>.008856?i:(t-16/116)/7.787,n=l>.008856?l:(n-16/116)/7.787,[t*=95.047,r*=100,n*=108.883]},i.lab.lch=function(e){var t,r=e[0],n=e[1],a=e[2];return(t=360*Math.atan2(a,n)/2/Math.PI)<0&&(t+=360),[r,Math.sqrt(n*n+a*a),t]},i.lch.lab=function(e){var t,r=e[0],n=e[1];return t=e[2]/360*2*Math.PI,[r,n*Math.cos(t),n*Math.sin(t)]},i.rgb.ansi16=function(e){var t=e[0],r=e[1],n=e[2],a=1 in arguments?arguments[1]:i.rgb.hsv(e)[2];if(0===(a=Math.round(a/50)))return 30;var o=30+(Math.round(n/255)<<2|Math.round(r/255)<<1|Math.round(t/255));return 2===a&&(o+=60),o},i.hsv.ansi16=function(e){return i.rgb.ansi16(i.hsv.rgb(e),e[2])},i.rgb.ansi256=function(e){var t=e[0],r=e[1],n=e[2];return t===r&&r===n?t<8?16:t>248?231:Math.round((t-8)/247*24)+232:16+36*Math.round(t/255*5)+6*Math.round(r/255*5)+Math.round(n/255*5)},i.ansi16.rgb=function(e){var t=e%10;if(0===t||7===t)return e>50&&(t+=3.5),[t=t/10.5*255,t,t];var r=.5*(1+~~(e>50));return[(1&t)*r*255,(t>>1&1)*r*255,(t>>2&1)*r*255]},i.ansi256.rgb=function(e){if(e>=232){var t=10*(e-232)+8;return[t,t,t]}var r;return e-=16,[Math.floor(e/36)/5*255,Math.floor((r=e%36)/6)/5*255,r%6/5*255]},i.rgb.hex=function(e){var t=(((255&Math.round(e[0]))<<16)+((255&Math.round(e[1]))<<8)+(255&Math.round(e[2]))).toString(16).toUpperCase();return"000000".substring(t.length)+t},i.hex.rgb=function(e){var t=e.toString(16).match(/[a-f0-9]{6}|[a-f0-9]{3}/i);if(!t)return[0,0,0];var r=t[0];3===t[0].length&&(r=r.split("").map((function(e){return e+e})).join(""));var n=parseInt(r,16);return[n>>16&255,n>>8&255,255&n]},i.rgb.hcg=function(e){var t,r=e[0]/255,n=e[1]/255,a=e[2]/255,o=Math.max(Math.max(r,n),a),i=Math.min(Math.min(r,n),a),l=o-i;return t=l<=0?0:o===r?(n-a)/l%6:o===n?2+(a-r)/l:4+(r-n)/l+4,t/=6,[360*(t%=1),100*l,100*(l<1?i/(1-l):0)]},i.hsl.hcg=function(e){var t=e[1]/100,r=e[2]/100,n=1,a=0;return(n=r<.5?2*t*r:2*t*(1-r))<1&&(a=(r-.5*n)/(1-n)),[e[0],100*n,100*a]},i.hsv.hcg=function(e){var t=e[1]/100,r=e[2]/100,n=t*r,a=0;return n<1&&(a=(r-n)/(1-n)),[e[0],100*n,100*a]},i.hcg.rgb=function(e){var t=e[0]/360,r=e[1]/100,n=e[2]/100;if(0===r)return[255*n,255*n,255*n];var a,o=[0,0,0],i=t%1*6,l=i%1,s=1-l;switch(Math.floor(i)){case 0:o[0]=1,o[1]=l,o[2]=0;break;case 1:o[0]=s,o[1]=1,o[2]=0;break;case 2:o[0]=0,o[1]=1,o[2]=l;break;case 3:o[0]=0,o[1]=s,o[2]=1;break;case 4:o[0]=l,o[1]=0,o[2]=1;break;default:o[0]=1,o[1]=0,o[2]=s}return a=(1-r)*n,[255*(r*o[0]+a),255*(r*o[1]+a),255*(r*o[2]+a)]},i.hcg.hsv=function(e){var t=e[1]/100,r=t+e[2]/100*(1-t),n=0;return r>0&&(n=t/r),[e[0],100*n,100*r]},i.hcg.hsl=function(e){var t=e[1]/100,r=e[2]/100*(1-t)+.5*t,n=0;return r>0&&r<.5?n=t/(2*r):r>=.5&&r<1&&(n=t/(2*(1-r))),[e[0],100*n,100*r]},i.hcg.hwb=function(e){var t=e[1]/100,r=t+e[2]/100*(1-t);return[e[0],100*(r-t),100*(1-r)]},i.hwb.hcg=function(e){var t=e[1]/100,r=1-e[2]/100,n=r-t,a=0;return n<1&&(a=(r-n)/(1-n)),[e[0],100*n,100*a]},i.apple.rgb=function(e){return[e[0]/65535*255,e[1]/65535*255,e[2]/65535*255]},i.rgb.apple=function(e){return[e[0]/255*65535,e[1]/255*65535,e[2]/255*65535]},i.gray.rgb=function(e){return[e[0]/100*255,e[0]/100*255,e[0]/100*255]},i.gray.hsl=i.gray.hsv=function(e){return[0,0,e[0]]},i.gray.hwb=function(e){return[0,100,e[0]]},i.gray.cmyk=function(e){return[0,0,0,e[0]]},i.gray.lab=function(e){return[e[0],0,0]},i.gray.hex=function(e){var t=255&Math.round(e[0]/100*255),r=((t<<16)+(t<<8)+t).toString(16).toUpperCase();return"000000".substring(r.length)+r},i.rgb.gray=function(e){return[(e[0]+e[1]+e[2])/3/255*100]}},function(e,t,r){var n=r(1),a=r(4),o=Object.hasOwnProperty,i={};for(var l in n)o.call(n,l)&&(i[n[l]]=l);var s=e.exports={to:{},get:{}};function u(e,t,r){return Math.min(Math.max(t,e),r)}function c(e){var t=Math.round(e).toString(16).toUpperCase();return t.length<2?"0"+t:t}s.get=function(e){var t,r;switch(e.substring(0,3).toLowerCase()){case"hsl":t=s.get.hsl(e),r="hsl";break;case"hwb":t=s.get.hwb(e),r="hwb";break;default:t=s.get.rgb(e),r="rgb"}return t?{model:r,value:t}:null},s.get.rgb=function(e){if(!e)return null;var t,r,a,i=[0,0,0,1];if(t=e.match(/^#([a-f0-9]{6})([a-f0-9]{2})?$/i)){for(a=t[2],t=t[1],r=0;r<3;r++){var l=2*r;i[r]=parseInt(t.slice(l,l+2),16)}a&&(i[3]=parseInt(a,16)/255)}else if(t=e.match(/^#([a-f0-9]{3,4})$/i)){for(a=(t=t[1])[3],r=0;r<3;r++)i[r]=parseInt(t[r]+t[r],16);a&&(i[3]=parseInt(a+a,16)/255)}else if(t=e.match(/^rgba?\(\s*([+-]?\d+)(?=[\s,])\s*(?:,\s*)?([+-]?\d+)(?=[\s,])\s*(?:,\s*)?([+-]?\d+)\s*(?:[,|\/]\s*([+-]?[\d\.]+)(%?)\s*)?\)$/)){for(r=0;r<3;r++)i[r]=parseInt(t[r+1],0);t[4]&&(t[5]?i[3]=.01*parseFloat(t[4]):i[3]=parseFloat(t[4]))}else{if(!(t=e.match(/^rgba?\(\s*([+-]?[\d\.]+)\%\s*,?\s*([+-]?[\d\.]+)\%\s*,?\s*([+-]?[\d\.]+)\%\s*(?:[,|\/]\s*([+-]?[\d\.]+)(%?)\s*)?\)$/)))return(t=e.match(/^(\w+)$/))?"transparent"===t[1]?[0,0,0,0]:o.call(n,t[1])?((i=n[t[1]])[3]=1,i):null:null;for(r=0;r<3;r++)i[r]=Math.round(2.55*parseFloat(t[r+1]));t[4]&&(t[5]?i[3]=.01*parseFloat(t[4]):i[3]=parseFloat(t[4]))}for(r=0;r<3;r++)i[r]=u(i[r],0,255);return i[3]=u(i[3],0,1),i},s.get.hsl=function(e){if(!e)return null;var t=e.match(/^hsla?\(\s*([+-]?(?:\d{0,3}\.)?\d+)(?:deg)?\s*,?\s*([+-]?[\d\.]+)%\s*,?\s*([+-]?[\d\.]+)%\s*(?:[,|\/]\s*([+-]?(?=\.\d|\d)(?:0|[1-9]\d*)?(?:\.\d*)?(?:[eE][+-]?\d+)?)\s*)?\)$/);if(t){var r=parseFloat(t[4]);return[(parseFloat(t[1])%360+360)%360,u(parseFloat(t[2]),0,100),u(parseFloat(t[3]),0,100),u(isNaN(r)?1:r,0,1)]}return null},s.get.hwb=function(e){if(!e)return null;var t=e.match(/^hwb\(\s*([+-]?\d{0,3}(?:\.\d+)?)(?:deg)?\s*,\s*([+-]?[\d\.]+)%\s*,\s*([+-]?[\d\.]+)%\s*(?:,\s*([+-]?(?=\.\d|\d)(?:0|[1-9]\d*)?(?:\.\d*)?(?:[eE][+-]?\d+)?)\s*)?\)$/);if(t){var r=parseFloat(t[4]);return[(parseFloat(t[1])%360+360)%360,u(parseFloat(t[2]),0,100),u(parseFloat(t[3]),0,100),u(isNaN(r)?1:r,0,1)]}return null},s.to.hex=function(){var e=a(arguments);return"#"+c(e[0])+c(e[1])+c(e[2])+(e[3]<1?c(Math.round(255*e[3])):"")},s.to.rgb=function(){var e=a(arguments);return e.length<4||1===e[3]?"rgb("+Math.round(e[0])+", "+Math.round(e[1])+", "+Math.round(e[2])+")":"rgba("+Math.round(e[0])+", "+Math.round(e[1])+", "+Math.round(e[2])+", "+e[3]+")"},s.to.rgb.percent=function(){var e=a(arguments),t=Math.round(e[0]/255*100),r=Math.round(e[1]/255*100),n=Math.round(e[2]/255*100);return e.length<4||1===e[3]?"rgb("+t+"%, "+r+"%, "+n+"%)":"rgba("+t+"%, "+r+"%, "+n+"%, "+e[3]+")"},s.to.hsl=function(){var e=a(arguments);return e.length<4||1===e[3]?"hsl("+e[0]+", "+e[1]+"%, "+e[2]+"%)":"hsla("+e[0]+", "+e[1]+"%, "+e[2]+"%, "+e[3]+")"},s.to.hwb=function(){var e=a(arguments),t="";return e.length>=4&&1!==e[3]&&(t=", "+e[3]),"hwb("+e[0]+", "+e[1]+"%, "+e[2]+"%"+t+")"},s.to.keyword=function(e){return i[e.slice(0,3)]}},function(e,t,r){"use strict";var n=r(5),a=Array.prototype.concat,o=Array.prototype.slice,i=e.exports=function(e){for(var t=[],r=0,i=e.length;r<i;r++){var l=e[r];n(l)?t=a.call(t,o.call(l)):t.push(l)}return t};i.wrap=function(e){return function(){return e(i(arguments))}}},function(e,t){e.exports=function(e){return!(!e||"string"==typeof e)&&(e instanceof Array||Array.isArray(e)||e.length>=0&&(e.splice instanceof Function||Object.getOwnPropertyDescriptor(e,e.length-1)&&"String"!==e.constructor.name))}},function(e,t,r){var n=r(2),a=r(8),o={};Object.keys(n).forEach((function(e){o[e]={},Object.defineProperty(o[e],"channels",{value:n[e].channels}),Object.defineProperty(o[e],"labels",{value:n[e].labels});var t=a(e);Object.keys(t).forEach((function(r){var n=t[r];o[e][r]=function(e){var t=function(t){if(null==t)return t;arguments.length>1&&(t=Array.prototype.slice.call(arguments));var r=e(t);if("object"==typeof r)for(var n=r.length,a=0;a<n;a++)r[a]=Math.round(r[a]);return r};return"conversion"in e&&(t.conversion=e.conversion),t}(n),o[e][r].raw=function(e){var t=function(t){return null==t?t:(arguments.length>1&&(t=Array.prototype.slice.call(arguments)),e(t))};return"conversion"in e&&(t.conversion=e.conversion),t}(n)}))})),e.exports=o},function(e,t,r){"use strict";e.exports={aliceblue:[240,248,255],antiquewhite:[250,235,215],aqua:[0,255,255],aquamarine:[127,255,212],azure:[240,255,255],beige:[245,245,220],bisque:[255,228,196],black:[0,0,0],blanchedalmond:[255,235,205],blue:[0,0,255],blueviolet:[138,43,226],brown:[165,42,42],burlywood:[222,184,135],cadetblue:[95,158,160],chartreuse:[127,255,0],chocolate:[210,105,30],coral:[255,127,80],cornflowerblue:[100,149,237],cornsilk:[255,248,220],crimson:[220,20,60],cyan:[0,255,255],darkblue:[0,0,139],darkcyan:[0,139,139],darkgoldenrod:[184,134,11],darkgray:[169,169,169],darkgreen:[0,100,0],darkgrey:[169,169,169],darkkhaki:[189,183,107],darkmagenta:[139,0,139],darkolivegreen:[85,107,47],darkorange:[255,140,0],darkorchid:[153,50,204],darkred:[139,0,0],darksalmon:[233,150,122],darkseagreen:[143,188,143],darkslateblue:[72,61,139],darkslategray:[47,79,79],darkslategrey:[47,79,79],darkturquoise:[0,206,209],darkviolet:[148,0,211],deeppink:[255,20,147],deepskyblue:[0,191,255],dimgray:[105,105,105],dimgrey:[105,105,105],dodgerblue:[30,144,255],firebrick:[178,34,34],floralwhite:[255,250,240],forestgreen:[34,139,34],fuchsia:[255,0,255],gainsboro:[220,220,220],ghostwhite:[248,248,255],gold:[255,215,0],goldenrod:[218,165,32],gray:[128,128,128],green:[0,128,0],greenyellow:[173,255,47],grey:[128,128,128],honeydew:[240,255,240],hotpink:[255,105,180],indianred:[205,92,92],indigo:[75,0,130],ivory:[255,255,240],khaki:[240,230,140],lavender:[230,230,250],lavenderblush:[255,240,245],lawngreen:[124,252,0],lemonchiffon:[255,250,205],lightblue:[173,216,230],lightcoral:[240,128,128],lightcyan:[224,255,255],lightgoldenrodyellow:[250,250,210],lightgray:[211,211,211],lightgreen:[144,238,144],lightgrey:[211,211,211],lightpink:[255,182,193],lightsalmon:[255,160,122],lightseagreen:[32,178,170],lightskyblue:[135,206,250],lightslategray:[119,136,153],lightslategrey:[119,136,153],lightsteelblue:[176,196,222],lightyellow:[255,255,224],lime:[0,255,0],limegreen:[50,205,50],linen:[250,240,230],magenta:[255,0,255],maroon:[128,0,0],mediumaquamarine:[102,205,170],mediumblue:[0,0,205],mediumorchid:[186,85,211],mediumpurple:[147,112,219],mediumseagreen:[60,179,113],mediumslateblue:[123,104,238],mediumspringgreen:[0,250,154],mediumturquoise:[72,209,204],mediumvioletred:[199,21,133],midnightblue:[25,25,112],mintcream:[245,255,250],mistyrose:[255,228,225],moccasin:[255,228,181],navajowhite:[255,222,173],navy:[0,0,128],oldlace:[253,245,230],olive:[128,128,0],olivedrab:[107,142,35],orange:[255,165,0],orangered:[255,69,0],orchid:[218,112,214],palegoldenrod:[238,232,170],palegreen:[152,251,152],paleturquoise:[175,238,238],palevioletred:[219,112,147],papayawhip:[255,239,213],peachpuff:[255,218,185],peru:[205,133,63],pink:[255,192,203],plum:[221,160,221],powderblue:[176,224,230],purple:[128,0,128],rebeccapurple:[102,51,153],red:[255,0,0],rosybrown:[188,143,143],royalblue:[65,105,225],saddlebrown:[139,69,19],salmon:[250,128,114],sandybrown:[244,164,96],seagreen:[46,139,87],seashell:[255,245,238],sienna:[160,82,45],silver:[192,192,192],skyblue:[135,206,235],slateblue:[106,90,205],slategray:[112,128,144],slategrey:[112,128,144],snow:[255,250,250],springgreen:[0,255,127],steelblue:[70,130,180],tan:[210,180,140],teal:[0,128,128],thistle:[216,191,216],tomato:[255,99,71],turquoise:[64,224,208],violet:[238,130,238],wheat:[245,222,179],white:[255,255,255],whitesmoke:[245,245,245],yellow:[255,255,0],yellowgreen:[154,205,50]}},function(e,t,r){var n=r(2);function a(e){var t=function(){for(var e={},t=Object.keys(n),r=t.length,a=0;a<r;a++)e[t[a]]={distance:-1,parent:null};return e}(),r=[e];for(t[e].distance=0;r.length;)for(var a=r.pop(),o=Object.keys(n[a]),i=o.length,l=0;l<i;l++){var s=o[l],u=t[s];-1===u.distance&&(u.distance=t[a].distance+1,u.parent=a,r.unshift(s))}return t}function o(e,t){return function(r){return t(e(r))}}function i(e,t){for(var r=[t[e].parent,e],a=n[t[e].parent][e],i=t[e].parent;t[i].parent;)r.unshift(t[i].parent),a=o(n[t[i].parent][i],a),i=t[i].parent;return a.conversion=r,a}e.exports=function(e){for(var t=a(e),r={},n=Object.keys(t),o=n.length,l=0;l<o;l++){var s=n[l];null!==t[s].parent&&(r[s]=i(s,t))}return r}},function(e,t,r){"use strict";r.r(t),r.d(t,"run",(function(){return ye})),r.d(t,"init",(function(){return me})),r.d(t,"convertBg",(function(){return ve})),r.d(t,"extend",(function(){return ke}));var n="(prefers-color-scheme: dark)",a="data_color_scheme_dark",o="".concat(1*new Date).concat(Math.round(10*Math.random())),i="data-darkmode-color-".concat(o),l="data-darkmode-bgcolor-".concat(o),s="data-darkmode-original-color-".concat(o),u="data-darkmode-original-bgcolor-".concat(o),c="data-darkmode-bgimage-".concat(o),h=window.getInnerHeight&&window.getInnerHeight()||window.innerHeight||document.documentElement.clientHeight,f=["TABLE","TR","TD","TH"],d=/ !important$/,g={hasInit:!1,begin:null,showFirstPage:null,error:null,mode:"",whitelist:{tagName:["MPCPS","IFRAME"]},needJudgeFirstPage:!0,delayBgJudge:!1,container:null,cssSelectorsPrefix:"",defaultLightTextColor:"#191919",defaultLightBgColor:"#fff",defaultDarkTextColor:"#a3a3a3",defaultDarkBgColor:"#191919",set:function(e,t,r){var n=t[r];switch(e){case"boolean":"boolean"==typeof n&&(this[r]=n);break;case"string":"string"==typeof n&&""!==n&&(this[r]=n);break;case"function":"function"==typeof n&&(this[r]=n);break;case"dom":n instanceof HTMLElement&&(this[r]=n)}}};function b(e,t,r){return t in e?Object.defineProperty(e,t,{value:r,enumerable:!0,configurable:!0,writable:!0}):e[t]=r,e}function p(e,t){if(!(e instanceof t))throw new TypeError("Cannot call a class as a function")}function y(e,t){for(var r=0;r<t.length;r++){var n=t[r];n.enumerable=n.enumerable||!1,n.configurable=!0,"value"in n&&(n.writable=!0),Object.defineProperty(e,n.key,n)}}function m(e,t,r){return t&&y(e.prototype,t),r&&y(e,r),Object.defineProperty(e,"prototype",{writable:!1}),e}var v=[],k=[],w=function(){function e(){p(this,e)}return m(e,[{key:"loopTimes",get:function(){return se.loopTimes}},{key:"isDarkmode",get:function(){return de.isDarkmode}},{key:"addCss",value:function(e,t){var r=!(arguments.length>2&&void 0!==arguments[2])||arguments[2];(r?v:k).push(he.genCss(e,t.map((function(e){var t=e.key,r=e.value;return he.genCssKV(t,r)})).join("")))}}]),e}(),x=function(){function e(){p(this,e),b(this,"_plugins",[]),b(this,"length",0),b(this,"loopTimes",0),b(this,"firstPageStyle",""),b(this,"otherPageStyle",""),b(this,"firstPageStyleNoMQ",""),b(this,"otherPageStyleNoMQ","")}return m(e,[{key:"extend",value:function(e){this._plugins.push(new(e(w))),this.length++}},{key:"emit",value:function(e){for(var t=arguments.length,r=new Array(t>1?t-1:0),n=1;n<t;n++)r[n-1]=arguments[n];this._plugins.forEach((function(t){"function"==typeof t[e]&&t[e].apply(t,r)}))}},{key:"addCss",value:function(e){e?(this.firstPageStyle+=v.join(""),this.firstPageStyleNoMQ+=k.join("")):(this.otherPageStyle+=v.join(""),this.otherPageStyleNoMQ+=k.join(""))}},{key:"resetCss",value:function(){v=[],k=[]}}]),e}();function M(e){return(M="function"==typeof Symbol&&"symbol"==typeof Symbol.iterator?function(e){return typeof e}:function(e){return e&&"function"==typeof Symbol&&e.constructor===Symbol&&e!==Symbol.prototype?"symbol":typeof e})(e)}function _(e,t){for(var r=0;r<t.length;r++){var n=t[r];n.enumerable=n.enumerable||!1,n.configurable=!0,"value"in n&&(n.writable=!0),Object.defineProperty(e,n.key,n)}}function C(e,t,r){return t in e?Object.defineProperty(e,t,{value:r,enumerable:!0,configurable:!0,writable:!0}):e[t]=r,e}var j=function(){function e(t){!function(e,t){if(!(e instanceof t))throw new TypeError("Cannot call a class as a function")}(this,e),C(this,"_queue",[]),C(this,"_idx",0),this._prefix=t}var t,r,n;return t=e,(r=[{key:"push",value:function(e){var t="".concat(this._prefix).concat(this._idx++);e.classList.add(t),this._queue.push({el:e,className:t,updated:!g.delayBgJudge})}},{key:"forEach",value:function(e){var t=[];for(this._queue.forEach((function(r,n){r.updated&&(t.unshift(n),M(e)&&e(r.el))}));t.length;)this._queue.splice(t.shift(),1)}},{key:"update",value:function(e){this._queue.forEach((function(t){t.updated||Array.prototype.some.call(e,(function(e){return!(1!==e.nodeType||!e.classList.contains(t.className)||(t.el=e,t.updated=!0,0))}))}))}}])&&_(t.prototype,r),n&&_(t,n),Object.defineProperty(t,"prototype",{writable:!1}),e}();function P(e,t){for(var r=0;r<t.length;r++){var n=t[r];n.enumerable=n.enumerable||!1,n.configurable=!0,"value"in n&&(n.writable=!0),Object.defineProperty(e,n.key,n)}}function S(e,t,r){return t in e?Object.defineProperty(e,t,{value:r,enumerable:!0,configurable:!0,writable:!0}):e[t]=r,e}var A=function(){function e(t){!function(e,t){if(!(e instanceof t))throw new TypeError("Cannot call a class as a function")}(this,e),S(this,"_stack",[]),S(this,"_idx",0),this._prefix=t}var t,r,n;return t=e,(r=[{key:"push",value:function(e,t){var r="".concat(this._prefix).concat(this._idx++);e.classList.add(r),this._stack.unshift({el:e,className:r,cssKV:t,updated:!g.delayBgJudge})}},{key:"contains",value:function(e,t){var r=e.getBoundingClientRect(),n=[];for(this._stack.forEach((function(e,t){if(e.updated){e.rect||(e.rect=e.el.getBoundingClientRect());var a=e.rect;r.top>=a.bottom||r.bottom<=a.top||r.left>=a.right||r.right<=a.left||n.unshift(t)}}));n.length;){var a=this._stack.splice(n.shift(),1)[0];"function"==typeof t&&t(a)}}},{key:"update",value:function(e){this._stack.forEach((function(t){t.updated||Array.prototype.some.call(e,(function(e){return!(1!==e.nodeType||!e.classList.contains(t.className)||(t.el=e,t.updated=!0,0))}))}))}}])&&P(t.prototype,r),n&&P(t,n),Object.defineProperty(t,"prototype",{writable:!1}),e}();function O(e,t){return function(e){if(Array.isArray(e))return e}(e)||function(e,t){var r=null==e?null:"undefined"!=typeof Symbol&&e[Symbol.iterator]||e["@@iterator"];if(null==r)return;var n,a,o=[],i=!0,l=!1;try{for(r=r.call(e);!(i=(n=r.next()).done)&&(o.push(n.value),!t||o.length!==t);i=!0);}catch(e){l=!0,a=e}finally{try{i||null==r.return||r.return()}finally{if(l)throw a}}return o}(e,t)||function(e,t){if(!e)return;if("string"==typeof e)return B(e,t);var r=Object.prototype.toString.call(e).slice(8,-1);"Object"===r&&e.constructor&&(r=e.constructor.name);if("Map"===r||"Set"===r)return Array.from(e);if("Arguments"===r||/^(?:Ui|I)nt(?:8|16|32)(?:Clamped)?Array$/.test(r))return B(e,t)}(e,t)||function(){throw new TypeError("Invalid attempt to destructure non-iterable instance.\nIn order to be iterable, non-array objects must have a [Symbol.iterator]() method.")}()}function B(e,t){(null==t||t>e.length)&&(t=e.length);for(var r=0,n=new Array(t);r<t;r++)n[r]=e[r];return n}function E(e,t){for(var r=0;r<t.length;r++){var n=t[r];n.enumerable=n.enumerable||!1,n.configurable=!0,"value"in n&&(n.writable=!0),Object.defineProperty(e,n.key,n)}}function T(e,t,r){return t in e?Object.defineProperty(e,t,{value:r,enumerable:!0,configurable:!0,writable:!0}):e[t]=r,e}var N=function(){function e(){!function(e,t){if(!(e instanceof t))throw new TypeError("Cannot call a class as a function")}(this,e),T(this,"_firstPageStyle",""),T(this,"_otherPageStyle",""),T(this,"isFinish",!1)}var t,r,o;return t=e,(r=[{key:"genCssKV",value:function(e,t){return"".concat(e,": ").concat(t," !important;")}},{key:"genCss",value:function(e,t){return"".concat("dark"===g.mode?"html.".concat(a," "):"").concat(g.cssSelectorsPrefix&&"".concat(g.cssSelectorsPrefix," "),".").concat(e,"{").concat(t,"}")}},{key:"addCss",value:function(e,t){this[t?"_firstPageStyle":"_otherPageStyle"]+=e,se.addCss(t)}},{key:"writeStyle",value:function(e){!e&&de.isDarkmode&&(this.isFinish=!0);var t=(de.isDarkmode?[{target:this,key:["_firstPageStyle","_otherPageStyle"],needMediaQuery:!0}]:[]).concat([{target:se,key:["firstPageStyle","otherPageStyle"],needMediaQuery:!0},{target:se,key:["firstPageStyleNoMQ","otherPageStyleNoMQ"],needMediaQuery:!1}]).map((function(t){var r=t.target,a=O(t.key,2),o=a[0],i=a[1],l=t.needMediaQuery,s="";e?s=o:(r[i]=r[o]+r[i],r[o]="",s=i);var u=r[s];return u?(r[s]="","dark"!==g.mode&&l?"@media ".concat(n," {").concat(u,"}"):u):""})).join("");t&&document.head.insertAdjacentHTML("beforeend",'<style type="text/css">'.concat(t,"</style>"))}}])&&E(t.prototype,r),o&&E(t,o),Object.defineProperty(t,"prototype",{writable:!1}),e}();function F(e,t){for(var r=0;r<t.length;r++){var n=t[r];n.enumerable=n.enumerable||!1,n.configurable=!0,"value"in n&&(n.writable=!0),Object.defineProperty(e,n.key,n)}}function D(e,t,r){return t in e?Object.defineProperty(e,t,{value:r,enumerable:!0,configurable:!0,writable:!0}):e[t]=r,e}function L(e){return function(e){if(Array.isArray(e))return q(e)}(e)||function(e){if("undefined"!=typeof Symbol&&null!=e[Symbol.iterator]||null!=e["@@iterator"])return Array.from(e)}(e)||function(e,t){if(!e)return;if("string"==typeof e)return q(e,t);var r=Object.prototype.toString.call(e).slice(8,-1);"Object"===r&&e.constructor&&(r=e.constructor.name);if("Map"===r||"Set"===r)return Array.from(e);if("Arguments"===r||/^(?:Ui|I)nt(?:8|16|32)(?:Clamped)?Array$/.test(r))return q(e,t)}(e)||function(){throw new TypeError("Invalid attempt to spread non-iterable instance.\nIn order to be iterable, non-array objects must have a [Symbol.iterator]() method.")}()}function q(e,t){(null==t||t>e.length)&&(t=e.length);for(var r=0,n=new Array(t);r<t;r++)n[r]=e[r];return n}function I(e){var t;return(t=[e]).concat.apply(t,L(e.querySelectorAll("*")))}var z={"ue-table-interlace-color-single":"#fcfcfc","ue-table-interlace-color-double":"#f7faff"};var V=function(){function e(){!function(e,t){if(!(e instanceof t))throw new TypeError("Cannot call a class as a function")}(this,e),D(this,"_nodes",[]),D(this,"_firstPageNodes",[]),D(this,"_delayNodes",[]),D(this,"showFirstPage",!1)}var t,r,n;return t=e,(r=[{key:"length",get:function(){return this._nodes.length}},{key:"set",value:function(){var e=arguments.length>0&&void 0!==arguments[0]?arguments[0]:[];this._nodes=e}},{key:"get",value:function(){var e=[];return this._nodes.length?(e=this._nodes,de.isDarkmode&&(this._nodes=[])):this._delayNodes.length?(e=this._delayNodes,this._delayNodes=[]):g.container&&(e=g.container.querySelectorAll("*")),e}},{key:"delay",value:function(){var e=this;Array.prototype.forEach.call(this._nodes,(function(t){return e._delayNodes.push(t)})),this._nodes=[]}},{key:"hasDelay",value:function(){return this._delayNodes.length>0}},{key:"addFirstPageNode",value:function(e){this._firstPageNodes.push(e)}},{key:"showFirstPageNodes",value:function(){this._firstPageNodes.forEach((function(e){return e.style.visibility="visible"})),this.showFirstPage=!0}},{key:"emptyFirstPageNodes",value:function(){this._firstPageNodes=[]}}])&&F(t.prototype,r),n&&F(t,n),Object.defineProperty(t,"prototype",{writable:!1}),e}(),K=r(0),J=r.n(K),$=r(1),H=r.n($);function R(e,t){return function(e){if(Array.isArray(e))return e}(e)||function(e,t){var r=null==e?null:"undefined"!=typeof Symbol&&e[Symbol.iterator]||e["@@iterator"];if(null==r)return;var n,a,o=[],i=!0,l=!1;try{for(r=r.call(e);!(i=(n=r.next()).done)&&(o.push(n.value),!t||o.length!==t);i=!0);}catch(e){l=!0,a=e}finally{try{i||null==r.return||r.return()}finally{if(l)throw a}}return o}(e,t)||U(e,t)||function(){throw new TypeError("Invalid attempt to destructure non-iterable instance.\nIn order to be iterable, non-array objects must have a [Symbol.iterator]() method.")}()}function Q(e){return function(e){if(Array.isArray(e))return G(e)}(e)||function(e){if("undefined"!=typeof Symbol&&null!=e[Symbol.iterator]||null!=e["@@iterator"])return Array.from(e)}(e)||U(e)||function(){throw new TypeError("Invalid attempt to spread non-iterable instance.\nIn order to be iterable, non-array objects must have a [Symbol.iterator]() method.")}()}function U(e,t){if(e){if("string"==typeof e)return G(e,t);var r=Object.prototype.toString.call(e).slice(8,-1);return"Object"===r&&e.constructor&&(r=e.constructor.name),"Map"===r||"Set"===r?Array.from(e):"Arguments"===r||/^(?:Ui|I)nt(?:8|16|32)(?:Clamped)?Array$/.test(r)?G(e,t):void 0}}function G(e,t){(null==t||t>e.length)&&(t=e.length);for(var r=0,n=new Array(t);r<t;r++)n[r]=e[r];return n}function W(e,t){for(var r=0;r<t.length;r++){var n=t[r];n.enumerable=n.enumerable||!1,n.configurable=!0,"value"in n&&(n.writable=!0),Object.defineProperty(e,n.key,n)}}function X(e,t,r){return t in e?Object.defineProperty(e,t,{value:r,enumerable:!0,configurable:!0,writable:!0}):e[t]=r,e}H.a.windowtext=[0,0,0],H.a.transparent=[255,255,255,0];var Y=new RegExp(Object.keys(H.a).map((function(e){return"\\b".concat(e,"\\b")})).join("|"),"ig"),Z=/\brgba?\([^)]+\)/i,ee=/\brgba?\([^)]+\)/gi,te=function(e){return e.replace(d,"")},re=function(e,t){return te(e).replace(Y,(function(e){if(!t&&"transparent"===e)return e;var r=H.a[e.toLowerCase()];return"".concat(r.length>3?"rgba":"rgb","(").concat(r.toString(),")")}))},ne=function(e){if(!e||e.length<1)return"";if(1===e.length)return e[0];for(var t=e.shift(),r=e.shift();r;){var n=J()(r);t=J()(t).mix(n,n.alpha()),r=e.shift()}return t},ae=function(e){var t=re(e);return Z.test(t)?t:""},oe=function(e){return(299*e[0]+587*e[1]+114*e[2])/1e3},ie=function(e,t){var r=e/oe(t),n=Math.min(255,t[0]*r),a=Math.min(255,t[1]*r),o=Math.min(255,t[2]*r);return 0===a||255===n||255===o?a=(1e3*e-299*n-114*o)/587:0===n?n=(1e3*e-587*a-114*o)/299:0!==o&&255!==a||(o=(1e3*e-299*n-587*a)/114),J.a.rgb(n,a,o)},le=function(){function e(){!function(e,t){if(!(e instanceof t))throw new TypeError("Cannot call a class as a function")}(this,e),X(this,"_idx",0),X(this,"_defaultDarkTextColorRgb",J()(g.defaultDarkTextColor).rgb().array()),X(this,"_defaultDarkBgColorRgb",J()(g.defaultDarkBgColor).rgb().array()),X(this,"_defaultDarkBgColorHSL",J()(g.defaultDarkBgColor).hsl().array()),X(this,"_defaultDarkTextColorBrightness",oe(this._defaultDarkTextColorRgb)),X(this,"_defaultDarkBgColorBrightness",oe(this._defaultDarkBgColorRgb)),X(this,"_defaultDarkBgColorHslBrightness",this._defaultDarkBgColorHSL[2]),X(this,"_maxLimitOffsetBrightness",this._defaultDarkTextColorBrightness-this._defaultDarkBgColorBrightness),X(this,"isDarkmode",!1)}var t,r,n;return t=e,(r=[{key:"_adjustTextBrightness",value:function(e,t){var r=t.rgb().array(),n=t.alpha(),a=oe(r)*n+this._defaultDarkBgColorBrightness*(1-n),o=e.rgb().array(),i=e.hsl().array(),l=e.alpha(),s=oe(o),u=Math.abs(a-s);if(s>=250)return e;if(u>this._maxLimitOffsetBrightness&&a<=this._defaultDarkBgColorBrightness+2)return ie(this._maxLimitOffsetBrightness+a,o).alpha(l);if(u>=65)return e;if(a>=100){if(i[2]>50){i[2]=90-i[2];var c=J.a.hsl.apply(J.a,Q(i)).alpha(l);return this._adjustTextBrightness(c,t)}return ie(Math.min(this._maxLimitOffsetBrightness,a-65),o).alpha(l)}if(i[2]<=40){i[2]=90-i[2];var h=J.a.hsl.apply(J.a,Q(i)).alpha(l);return this._adjustTextBrightness(h,t)}return ie(Math.min(this._maxLimitOffsetBrightness,a+65),o).alpha(l)}},{key:"_adjustBackgroundBrightness",value:function(e){var t=e.rgb().array(),r=e.hsl().array(),n=e.alpha(),a=oe(t),o=e;return 0===r[1]&&r[2]>40||a>250?o=J.a.hsl(0,0,Math.min(100,100+this._defaultDarkBgColorHslBrightness-r[2])):a>190?o=ie(190,t).alpha(n):r[2]<22&&(r[2]=22,o=J.a.hsl.apply(J.a,Q(r))),o.alpha(n).rgb()}},{key:"_adjustBrightness",value:function(e,t,r){var n,a=e.alpha(),o="";if(r.isBgColor){if(t.getAttribute(c)&&a>=.05&&t.removeAttribute(c),n=this._adjustBackgroundBrightness(e),!r.hasInlineColor){var s=t.getAttribute(i)||g.defaultLightTextColor,u=n||e,h=this._adjustBrightness(J()(s),t,{isTextColor:!0,parentElementBgColorStr:u});h.newColor?o+=he.genCssKV("color",h.newColor):o+=he.genCssKV("color",s)}}else if(r.isTextColor||r.isBorderColor){var f=r.parentElementBgColorStr||r.isTextColor&&t.getAttribute(l)||g.defaultDarkBgColor,d=J()(f);t.getAttribute(c)||(n=this._adjustTextBrightness(e,d),se.emit("afterConvertTextColor",t,{fontColor:n,bgColor:d}))}else r.isTextShadow&&(t.getAttribute(c)||(n=this._adjustBackgroundBrightness(e)));return{newColor:n&&e.toString()!==n.toString()&&n.alpha(a).rgb(),extStyle:o}}},{key:"_try",value:function(e){try{return e()}catch(e){console.log("An error occurred when running the dark mode conversion algorithm\n",e),"function"==typeof g.error&&g.error(e)}}},{key:"convert",value:function(e){var t=this;se.resetCss(),se.emit("beforeConvertNode",e);var r,n,a="";if(this.isDarkmode){var o=e.nodeName;if(g.whitelist.tagName.indexOf(o)>-1)return"";var h,b,p=e.style,y="",m=!1,v=!1,k=!1,w=(p.cssText&&p.cssText.split(";")||[]).map((function(e){var t=e.indexOf(":");return[e.slice(0,t).toLowerCase(),e.slice(t+1)].map((function(e){return(e||"").replace(/^[\s\uFEFF\xA0]+|[\s\uFEFF\xA0]+$/g,"")}))})).filter((function(e){var t=R(e,2),r=t[0],n=t[1];return"color"===r?m=!0:/background/i.test(r)&&(v=!0,"background-position"===r?h=n:"background-size"===r&&(b=n)),(/background/i.test(r)||/^(-webkit-)?border-image/.test(r))&&/url\([^)]*\)/i.test(n)&&(k=!0),["-webkit-border-image","border-image","color","background-color","background-image","background","border","border-top","border-right","border-bottom","border-left","border-color","border-top-color","border-right-color","border-bottom-color","border-left-color","-webkit-text-fill-color","-webkit-text-stroke","-webkit-text-stroke-color","text-shadow"].indexOf(r)>-1})).sort((function(e,t){var r=R(e,1)[0],n=R(t,1)[0];return"color"===r||"background-image"===r&&"background-color"===n||0===n.indexOf("-webkit-text")?1:-1}));f.indexOf(o)>-1&&!v&&this._try((function(){var t=function(e){var t=null;return Array.prototype.some.call(e.classList,(function(e){return!!z[e]&&(t=z[e],!0)})),t}(e);t||(t=e.getAttribute("bgcolor")),t&&(w.unshift(["background-color",J()(t).toString()]),v=!0)})),"FONT"!==o||m||this._try((function(){var t=e.getAttribute("color");t&&(w.push(["color",J()(t).toString()]),m=!0)}));var x="",M="",_=0;if(w.some((function(e,r){var n=R(e,2),a=n[0],o=n[1];return t._try((function(){if(0!==a.indexOf("-webkit-text"))return _=r,!0;switch(a){case"-webkit-text-fill-color":x=ae(o);break;case"-webkit-text-stroke":var e=o.split(" ");2===e.length&&(M=ae(e[1]));break;case"-webkit-text-stroke-color":M=ae(o)}return!1}))})),x&&(m?w[w.length-1]=["-webkit-text-fill-color",x]:(w.push(["-webkit-text-fill-color",x]),m=!0)),_&&(w.splice(0,_),M&&w.unshift(["-webkit-text-stroke-color",M])),w.forEach((function(r){var n=R(r,2),a=n[0],o=n[1];return t._try((function(){var r,n=o,f=!1,w=/^background/.test(a),x="text-shadow"===a,M=["-webkit-text-stroke-color","color","-webkit-text-fill-color"].indexOf(a),_=/^border/.test(a),C=/gradient/.test(o),j=[],P="";if(o=re(o,C),Z.test(o)){if(C){for(var S=ee.exec(o);S;)j.push(S[0]),S=ee.exec(o);r=ne(j)}var A=0;o=o.replace(ee,(function(n){C&&(n=r,f=!0);var a=t._adjustBrightness(J()(n),e,{isBgColor:w,isTextShadow:x,isTextColor:M>-1,isBorderColor:_,hasInlineColor:m}),o=!k&&a.newColor;if(P+=a.extStyle,w||M>0){var h=w?l:i,d=w?u:s,b=o?o.toString():n;0===A&&I(e).forEach((function(e){var t=e.getAttribute(d)||g.defaultLightBgColor;e.setAttribute(h,b),e.setAttribute(d,t.split("|").concat(n).join("|")),w&&J()(b).alpha()>=.05&&e.getAttribute(c)&&e.removeAttribute(c)}))}return o&&(f=!0),A+=1,o||n})).replace(/\s?!\s?important/gi,"")}if(P&&(y+=P),!(e instanceof SVGElement)){var O=/^background/.test(a),B=/^(-webkit-)?border-image/.test(a);if((O||B)&&/url\([^)]*\)/i.test(o)){f=!0;var E=ne((e.getAttribute(u)||g.defaultLightBgColor).split("|"));if(o=o.replace(/^(.*?)url\(([^)]*)\)(.*)$/i,(function(t){var r=t,n="",o="",i="";return"1"!==e.getAttribute(c)&&I(e).forEach((function(e){return e.setAttribute(c,"1")})),O?(r="linear-gradient(".concat("rgba(0,0,0,0.2)",", ").concat("rgba(0,0,0,0.2)","),").concat(t),i=he.genCssKV(a,"".concat(r,",linear-gradient(").concat(E,", ").concat(E,")")),h&&(n="top left,".concat(h),y+=he.genCssKV("background-position","".concat(n)),i+=he.genCssKV("background-position","".concat(n,",top left"))),b&&(o="100%,".concat(b),y+=he.genCssKV("background-size","".concat(o)),i+=he.genCssKV("background-size","".concat(o,",100%"))),ce.push(e,i)):!v&&ce.push(e,he.genCssKV("background-image","linear-gradient(".concat("rgba(0,0,0,0.2)",", ").concat("rgba(0,0,0,0.2)","),linear-gradient(").concat(E,", ").concat(E,")"))),r})),!m){var T=ne((e.getAttribute(s)||g.defaultLightTextColor).split("|"));y+=he.genCssKV("color",T),I(e).forEach((function(e){return e.setAttribute(i,T)}))}}}f&&(d.test(n)&&(p[a]=te(n)),C?ce.push(e,he.genCssKV(a,o)):y+=he.genCssKV(a,o))}))})),y){e.setAttribute("data-style",p.cssText);var C="".concat("js_darkmode__").concat(this._idx++);e.classList.add(C),a+=y?he.genCss(C,y):""}r=e,n="",Array.prototype.forEach.call(r.childNodes,(function(e){3===e.nodeType&&(n+=e.nodeValue.replace(/\s/g,""))})),n.length>0&&(g.delayBgJudge?ue.push(e):ce.contains(e,(function(e){a+=he.genCss(e.className,e.cssKV)})))}return se.emit("afterConvertNode",e),a}}])&&W(t.prototype,r),n&&W(t,n),Object.defineProperty(t,"prototype",{writable:!1}),e}(),se=new x,ue=new j("".concat("js_darkmode__","text__")),ce=new A("".concat("js_darkmode__","bg__")),he=new N,fe=new V,de=new le,ge=new RegExp("".concat("js_darkmode__","[^ ]+"),"g"),be=null,pe=function(e){var t=arguments.length>1&&void 0!==arguments[1]?arguments[1]:{type:"dom"};if(t.force&&(he.isFinish=!1),!he.isFinish)try{de.isDarkmode=g.mode?"dark"===g.mode:e.matches,"dom"===t.type?(de.isDarkmode&&"function"==typeof g.begin&&g.begin(fe.hasDelay()),Array.prototype.forEach.call(fe.get(),(function(e){if(de.isDarkmode&&e.className&&"string"==typeof e.className&&(e.className=e.className.replace(ge,"")),de.isDarkmode||se.length)if(g.needJudgeFirstPage){var t=e.getBoundingClientRect(),r=t.top,n=t.bottom;r<=0&&n<=0?he.addCss(de.convert(e),!1):r>0&&r<h||n>0&&n<h?(fe.addFirstPageNode(e),he.addCss(de.convert(e),!0)):(g.needJudgeFirstPage=!1,he.writeStyle(!0),fe.showFirstPageNodes(),"function"==typeof g.showFirstPage&&g.showFirstPage(),he.addCss(de.convert(e),!1))}else he.addCss(de.convert(e),!1)})),se.loopTimes++):"bg"===t.type&&de.isDarkmode&&ue.forEach((function(e){return ce.contains(e,(function(e){he.addCss(he.genCss(e.className,e.cssKV),!1)}))})),(g.needJudgeFirstPage||!g.needJudgeFirstPage&&!fe.showFirstPage)&&"function"==typeof g.showFirstPage&&g.showFirstPage(),he.writeStyle(),fe.emptyFirstPageNodes(),de.isDarkmode||(g.needJudgeFirstPage=!1,g.delayBgJudge=!1,null===g.container&&"dom"===t.type&&fe.length&&fe.delay())}catch(e){console.log("An error occurred when running the dark mode conversion algorithm\n",e),"function"==typeof g.error&&g.error(e)}};function ye(e,t){me(t),fe.set(e),pe(be,{force:!0,type:"dom"})}function me(){var e=arguments.length>0&&void 0!==arguments[0]?arguments[0]:{};if(!g.hasInit){g.hasInit=!0;var t=g.whitelist.tagName;e.whitelist&&e.whitelist.tagName instanceof Array&&e.whitelist.tagName.forEach((function(e){e=e.toUpperCase(),-1===t.indexOf(e)&&t.push(e)})),["dark","light"].indexOf(e.mode)>-1&&(g.set("string",e,"mode"),document.getElementsByTagName("html")[0].classList.add(a)),g.set("function",e,"begin"),g.set("function",e,"showFirstPage"),g.set("function",e,"error"),g.set("boolean",e,"needJudgeFirstPage"),g.set("boolean",e,"delayBgJudge"),g.set("dom",e,"container"),g.set("string",e,"cssSelectorsPrefix"),g.set("string",e,"defaultLightTextColor"),g.set("string",e,"defaultLightBgColor"),g.set("string",e,"defaultDarkTextColor"),g.set("string",e,"defaultDarkBgColor"),!g.mode&&null===be&&window.matchMedia&&(be=window.matchMedia(n)).addListener(pe)}}function ve(e){fe.set(e),null!==g.container&&(ce.update(e),ue.update(e)),pe(be,{force:!0,type:"bg"})}function ke(e){e.forEach((function(e){return se.extend(e)}))}}])}));</script><script type="text/javascript" nonce="1102006763" reportloaderror>var __INLINE_SCRIPT__=function(){"use strict";function t(t,e){if(!(t instanceof e))throw new TypeError("Cannot call a class as a function")}function e(t,e){for(var n=0;n<e.length;n++){var r=e[n];r.enumerable=r.enumerable||!1,r.configurable=!0,"value"in r&&(r.writable=!0),Object.defineProperty(t,r.key,r)}}function n(t,e){return n=Object.setPrototypeOf||function(t,e){return t.__proto__=e,t},n(t,e)}function r(t){return r="function"==typeof Symbol&&"symbol"==typeof Symbol.iterator?function(t){return typeof t}:function(t){return t&&"function"==typeof Symbol&&t.constructor===Symbol&&t!==Symbol.prototype?"symbol":typeof t},r(t)}function o(t,e){if(e&&("object"===r(e)||"function"==typeof e))return e;if(void 0!==e)throw new TypeError("Derived constructors may only return object or undefined");return function(t){if(void 0===t)throw new ReferenceError("this hasn't been initialised - super() hasn't been called");return t}(t)}function i(t){return i=Object.setPrototypeOf?Object.getPrototypeOf:function(t){return t.__proto__||Object.getPrototypeOf(t)},i(t)}function u(t){var e=function(){if("undefined"==typeof Reflect||!Reflect.construct)return!1;if(Reflect.construct.sham)return!1;if("function"==typeof Proxy)return!0;try{return Boolean.prototype.valueOf.call(Reflect.construct(Boolean,[],(function(){}))),!0}catch(t){return!1}}();return function(){var n,r=i(t);if(e){var u=i(this).constructor;n=Reflect.construct(r,arguments,u)}else n=r.apply(this,arguments);return o(this,n)}}var a=function(r){var o=0;r&&r.front_end_additional_fields&&r.front_end_additional_fields.is_auto_type_setting&&(o=r.front_end_additional_fields.is_auto_type_setting);return function(r){var i=!1,a=document.querySelectorAll("#js_content")[0],c={appmsgid:window.appmsgid,pointerEvents:!1,heightAnimate:!1},f=function(t,e){return 1===t.length&&t[0].tagName&&t[0].tagName.toLowerCase()===e};return function(r){!function(t,e){if("function"!=typeof e&&null!==e)throw new TypeError("Super expression must either be null or a function");t.prototype=Object.create(e&&e.prototype,{constructor:{value:t,writable:!0,configurable:!0}}),Object.defineProperty(t,"prototype",{writable:!1}),e&&n(t,e)}(y,r);var s,l,p,d=u(y);function y(){return t(this,y),d.apply(this,arguments)}return s=y,(l=[{key:"afterConvertNode",value:function(t){if(!this.loopTimes){if(!i){var e=navigator.userAgent;/(iPhone|iPad|iPod|iOS|mac\sos)/i.test(e)&&a.classList.add("fix_apple_default_style"),i=!0}if("animate"===t.tagName&&"height"===t.getAttribute("attributeName")){var n=t.getAttribute("repeatCount");("indefinite"===n||n>"10")&&"click"!==t.getAttribute("begin")&&"click"!==t.getAttribute("end")&&(t.setAttribute("repeatCount","undefined"),t.setAttribute("attributeName","undefined"),(new Image).src="https://mp.weixin.qq.com/mp/jsmonitor?idkey=306525_1_1")}if(1===o)try{var r=t.parentNode.id;if(("js_content"===r||"js_secopen_content"===r)&&"p"===t.tagName.toLowerCase()){var u=t.childNodes;""===t.textContent&&(f(u,"br")||1===u.length&&f(u[0].childNodes,"br"))&&(t.previousElementSibling.style.marginBottom="0em",t.style.marginBottom="0em")}}catch(t){if("undefined"!=typeof WX_BJ_REPORT&&WX_BJ_REPORT.BadJs){var s=JSON.stringify(c);WX_BJ_REPORT.BadJs.report("domFilter",s,{mid:"mmbizwap:domMonitor",view:"wap_appmsg"})}}}}}])&&e(s.prototype,l),p&&e(s,p),Object.defineProperty(s,"prototype",{writable:!1}),y}(r)}};return window.__second_open__||(window.DomFilter=a()),a}();</script>
+<script type="text/javascript" nonce="1102006763" reportloaderror>
+(function () {
+  if (!window.__second_open__ && window.Darkmode) { // 非秒开，秒开的逻辑写在skeleton.js里
+    var cost = 0; // 记录Darkmode首屏渲染耗时
+    window.Darkmode.extend([window.DomFilter]); // 插件注册
+    window.Darkmode.run(document.querySelectorAll('#js_content *'), {
+      mode: '', // ''|'dark'|'light', 空表示跟随系统
+      defaultDarkBgColor: '',
+      error: function () {
+        (new Image()).src = 'https://mp.weixin.qq.com/mp/jsmonitor?idkey=125617_0_1'; // 上报conver出错 H5
+      },
+      begin: function (isSwitch) {
+        (new Image()).src = 'https://mp.weixin.qq.com/mp/jsmonitor?idkey=125617_2_1'; // 上报Darkmode H5 PV
+        isSwitch && ((new Image()).src = 'https://mp.weixin.qq.com/mp/jsmonitor?idkey=125617_4_1'); // 上报Darkmode H5 PV（仅含从LM切换到DM的情况）
+
+        cost = new Date() * 1; // 记录开始渲染的时间
+      },
+      showFirstPage: function () {
+        cost = new Date() * 1 - cost; // 记录首屏渲染耗时
+        var isTop = (document.documentElement.scrollTop || window.pageYOffset || document.body.scrollTop) === 0;
+        // 上报Darkmode耗时大盘数据
+        if (cost <= 10) {
+          (new Image()).src = 'https://mp.weixin.qq.com/mp/jsmonitor?idkey=125617_6_1'; // 上报Darkmode H5 首屏渲染时间在10ms以内（含10ms）PV
+          isTop && ((new Image()).src = 'https://mp.weixin.qq.com/mp/jsmonitor?idkey=125617_13_1'); // 上报Darkmode H5 首屏渲染时间在10ms以内（含10ms）PV - 无滚动
+        } else if (cost > 10 && cost <= 20) {
+          (new Image()).src = 'https://mp.weixin.qq.com/mp/jsmonitor?idkey=125617_7_1'; // 上报Darkmode H5 首屏渲染时间在(10ms, 20ms]之间PV
+          isTop && ((new Image()).src = 'https://mp.weixin.qq.com/mp/jsmonitor?idkey=125617_14_1'); // 上报Darkmode H5 首屏渲染时间在(10ms, 20ms]之间PV - 无滚动
+        } else if (cost > 20 && cost <= 30) {
+          (new Image()).src = 'https://mp.weixin.qq.com/mp/jsmonitor?idkey=125617_8_1'; // 上报Darkmode H5 首屏渲染时间在(20ms, 30ms]之间PV
+          isTop && ((new Image()).src = 'https://mp.weixin.qq.com/mp/jsmonitor?idkey=125617_15_1'); // 上报Darkmode H5 首屏渲染时间在(20ms, 30ms]之间PV - 无滚动
+        } else if (cost > 30 && cost <= 40) {
+          (new Image()).src = 'https://mp.weixin.qq.com/mp/jsmonitor?idkey=125617_9_1'; // 上报Darkmode H5 首屏渲染时间在(30ms, 40ms]之间PV
+          isTop && ((new Image()).src = 'https://mp.weixin.qq.com/mp/jsmonitor?idkey=125617_16_1'); // 上报Darkmode H5 首屏渲染时间在(30ms, 40ms]之间PV - 无滚动
+        } else if (cost > 40 && cost <= 50) {
+          (new Image()).src = 'https://mp.weixin.qq.com/mp/jsmonitor?idkey=125617_10_1'; // 上报Darkmode H5 首屏渲染时间在(40ms, 50ms]之间PV
+          isTop && ((new Image()).src = 'https://mp.weixin.qq.com/mp/jsmonitor?idkey=125617_17_1'); // 上报Darkmode H5 首屏渲染时间在(40ms, 50ms]之间PV - 无滚动
+        } else if (cost > 50 && cost <= 60) {
+          (new Image()).src = 'https://mp.weixin.qq.com/mp/jsmonitor?idkey=125617_11_1'; // 上报Darkmode H5 首屏渲染时间在(50ms, 60ms]之间PV
+          isTop && ((new Image()).src = 'https://mp.weixin.qq.com/mp/jsmonitor?idkey=125617_18_1'); // 上报Darkmode H5 首屏渲染时间在(50ms, 60ms]之间PV - 无滚动
+        } else {
+          (new Image()).src = 'https://mp.weixin.qq.com/mp/jsmonitor?idkey=125617_12_1'; // 上报Darkmode H5 首屏渲染时间在60ms以上（不含60ms）PV
+          isTop && ((new Image()).src = 'https://mp.weixin.qq.com/mp/jsmonitor?idkey=125617_19_1'); // 上报Darkmode H5 首屏渲染时间在60ms以上（不含60ms）PV - 无滚动
+        }
+      }
+    });
+    document.getElementById('js_content').style.visibility = 'visible';
+  }
+})();
+</script>
+
+<script type="text/javascript" nonce="1102006763" reportloaderror>
+(function(_g){
+    _g.appmsg_like_type = "2" * 1 ? "2" * 1 : 1;
+    // _g.appmsg_like_type = 2;
+    _g.clientversion = "";
+    _g.passparam = ""; // 看一看带参数
+    if(!_g.msg_link) {
+      _g.msg_link = "";
+    }
+    _g.appmsg_type = "9"; // 后台图文消息类型
+    _g.devicetype = ""; // devicetype
+})(window);
+// 已翻译
+</script>
+
+<script type="text/javascript" nonce="1102006763" reportloaderror>
+// 企业微信里置灰公众号名称
+(function() {
+  var ua = window.navigator.userAgent;
+  if (/MicroMessenger\/([\d\.]+)/i.test(ua) && /wxwork/i.test(ua)) {
+    var profileName = document.getElementById('js_name');
+    var authorName = document.getElementById('js_author_name');
+    var accountNames = document.getElementsByClassName('account_nickname_inner');
+    if (profileName) {
+      profileName.classList.add('tips_global_primary');
+    }
+    if (authorName) {
+      authorName.classList.add('tips_global_primary');
+    }
+    if (accountNames && accountNames.length) {
+      accountNames[0].classList.add('tips_global_primary');
+    }
+  }
+})();
+</script>
+<script type="text/javascript" nonce="1102006763" reportloaderror>
+// 安卓插入米大师 h5 sdk
+(function() {
+  var ua = navigator.userAgent;
+  if (ua.indexOf("MicroMessenger") != -1 && ua.indexOf("Android") != -1){
+    var script = document.createElement('script');
+    var head = document.getElementsByTagName('head')[0];
+    script.type = 'text/javascript';
+    script.src = "https://midas.gtimg.cn/h5sdk/js/api/h5sdk.js";
+    head.appendChild(script);
+  }
+})();
+</script>
+<script type="text/javascript" nonce="1102006763" reportloaderror>
+var real_show_page_time = +new Date();
+if (!!window.addEventListener){
+  window.addEventListener("load", function(){
+    window.onload_endtime = +new Date();
+  });
+}
+</script>
+
+<script nomodule nonce="1102006763" reportloaderror>new Image().src='https://mp.weixin.qq.com/mp/jsmonitor?idkey=66881_111_1&t='+Math.random();</script>
+
+    
+
+<script nomodule nonce="1102006763" reportloaderror>!function(){var e=document,t=e.createElement("script");if(!("noModule"in t)&&"onbeforeload"in t){var n=!1;e.addEventListener("beforeload",(function(e){if(e.target===t)n=!0;else if(!e.target.hasAttribute("nomodule")||!n)return;e.preventDefault()}),!0),t.type="module",t.src=".",e.head.appendChild(t),t.remove()}}();</script>
+<script nomodule id="vite-legacy-polyfill" src="//res.wx.qq.com/mmbizwap/zh_CN/htmledition/js/../mmbizappmsg/assets/polyfills-legacy.2b746931.js" nonce="1102006763" reportloaderror></script>
+<script nomodule id="vite-legacy-entry" src="https://images.weserv.nl/?url=//res.wx.qq.com/mmbizwap/zh_CN/htmledition/js/../mmbizappmsg/assets/appmsg-legacy.204269e8.l46y0xft5e7899.js" nonce="1102006763" reportloaderror>System.import(document.getElementById('vite-legacy-entry').getAttribute('data-src'))</script>
+
+    <link rel="stylesheet" type="text/css" href="//res.wx.qq.com/mmbizwap/zh_CN/htmledition/style/page/appmsg_new/mod/weui_a11y5e7896.css" reportloaderror>
+<script type="text/javascript" src="//res.wx.qq.com/mmbizwap/zh_CN/htmledition/js/lib/wa-helper.min5e7896.js" nonce="1102006763" reportloaderror></script>
+<script type="text/javascript" nonce="1102006763" reportloaderror>
+  // WAH.default.init()
+</script>
+
+
+
+<span aria-hidden="true" class="weui-a11y_ref" style="display:none" id="js_a11y_colon">：</span>
+<span aria-hidden="true" class="weui-a11y_ref" style="display:none" id="js_a11y_comma">，</span>
+<span aria-hidden="true" class="weui-a11y_ref" style="display:none" id="js_a11y_period">。</span>
+<span aria-hidden="true" class="weui-a11y_ref" style="display:none" id="js_a11y_space">&nbsp;</span>
+
+
+<span aria-hidden="true" class="weui-a11y_ref" style="display:none" id="js_a11y_type_video">视频</span>
+<span aria-hidden="true" class="weui-a11y_ref" style="display:none" id="js_a11y_type_weapp">小程序</span>
+
+
+<span aria-hidden="true" class="weui-a11y_ref" style="display:none" id="js_a11y_zan_btn_txt">赞</span>
+<span aria-hidden="true" class="weui-a11y_ref" style="display:none" id="js_a11y_zan_btn_tips">，轻点两下取消赞</span>
+<span aria-hidden="true" class="weui-a11y_ref" style="display:none" id="js_a11y_like_btn_txt">在看</span>
+<span aria-hidden="true" class="weui-a11y_ref" style="display:none" id="js_a11y_like_btn_tips">，轻点两下取消在看</span>
+
+  </body>
+</html>
+
+
